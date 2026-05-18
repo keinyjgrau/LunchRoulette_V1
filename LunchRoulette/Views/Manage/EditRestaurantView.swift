@@ -12,14 +12,25 @@ import PhotosUI
 struct EditRestaurantView: View {
     @Environment(\.dismiss) private var dismiss
 
+    @AppStorage(FoodTypeCatalog.storageKey) private var foodTypeOptionsRawValue: String = FoodTypeCatalog.encode(FoodTypeCatalog.defaultTypes)
+
     @Bindable var restaurant: Restaurant
 
     @State private var photoItem: PhotosPickerItem? = nil
     @State private var tempPhotoData: Data? = nil
 
+    @State private var selectedFoodType = ""
+    @State private var avgCostText = ""
+    @State private var addressText = ""
+    @State private var detailsTextValue = ""
+
     @State private var ratingText: String = ""
     @State private var frequencyText: String = ""
     @State private var distanceText: String = ""
+
+    private var foodTypeOptions: [String] {
+        FoodTypeCatalog.decode(foodTypeOptionsRawValue)
+    }
 
     var body: some View {
         Form {
@@ -58,9 +69,15 @@ struct EditRestaurantView: View {
             }
 
             Section("Details") {
-                TextField("Type of food", text: foodTypeBinding)
-                TextField("Average cost", text: avgCostBinding)
-                TextField("Address", text: addressBinding)
+                Picker("Type of food", selection: $selectedFoodType) {
+                    Text("None").tag("")
+                    ForEach(foodTypeOptions, id: \.self) { type in
+                        Text(type).tag(type)
+                    }
+                }
+
+                TextField("Average cost", text: $avgCostText)
+                TextField("Address", text: $addressText)
 
                 TextField("Rating (0–5)", text: $ratingText)
                     .keyboardType(.decimalPad)
@@ -71,7 +88,7 @@ struct EditRestaurantView: View {
                 TextField("Distance miles", text: $distanceText)
                     .keyboardType(.decimalPad)
 
-                TextEditor(text: detailsTextBinding)
+                TextEditor(text: $detailsTextValue)
                     .frame(minHeight: 90)
             }
         }
@@ -80,13 +97,18 @@ struct EditRestaurantView: View {
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Done") {
-                    applyNumericFields()
+                    applyChanges()
                     dismiss()
                 }
                 .disabled(restaurant.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .onAppear {
+            selectedFoodType = restaurant.foodType ?? ""
+            avgCostText = restaurant.avgCost ?? ""
+            addressText = restaurant.address ?? ""
+            detailsTextValue = restaurant.detailsText ?? ""
+
             ratingText = restaurant.rating.map { String($0) } ?? ""
             frequencyText = restaurant.frequency.map { String($0) } ?? ""
             distanceText = restaurant.distanceMiles.map { String($0) } ?? ""
@@ -104,53 +126,19 @@ struct EditRestaurantView: View {
         }
     }
 
-    private var foodTypeBinding: Binding<String> {
-        Binding(
-            get: { restaurant.foodType ?? "" },
-            set: { newValue in
-                let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                restaurant.foodType = trimmed.isEmpty ? nil : trimmed
-            }
-        )
-    }
+    private func applyChanges() {
+        let trimmedFoodType = selectedFoodType.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedCost = avgCostText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedAddress = addressText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedDetails = detailsTextValue.trimmingCharacters(in: .whitespacesAndNewlines)
 
-    private var avgCostBinding: Binding<String> {
-        Binding(
-            get: { restaurant.avgCost ?? "" },
-            set: { newValue in
-                let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                restaurant.avgCost = trimmed.isEmpty ? nil : trimmed
-            }
-        )
-    }
+        restaurant.foodType = trimmedFoodType.isEmpty ? nil : trimmedFoodType
+        restaurant.avgCost = trimmedCost.isEmpty ? nil : trimmedCost
+        restaurant.address = trimmedAddress.isEmpty ? nil : trimmedAddress
+        restaurant.detailsText = trimmedDetails.isEmpty ? nil : trimmedDetails
 
-    private var addressBinding: Binding<String> {
-        Binding(
-            get: { restaurant.address ?? "" },
-            set: { newValue in
-                let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                restaurant.address = trimmed.isEmpty ? nil : trimmed
-            }
-        )
-    }
-
-    private var detailsTextBinding: Binding<String> {
-        Binding(
-            get: { restaurant.detailsText ?? "" },
-            set: { newValue in
-                let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                restaurant.detailsText = trimmed.isEmpty ? nil : trimmed
-            }
-        )
-    }
-
-    private func applyNumericFields() {
-        let rating = Double(ratingText.replacingOccurrences(of: ",", with: "."))
-        restaurant.rating = rating
-
+        restaurant.rating = Double(ratingText.replacingOccurrences(of: ",", with: "."))
         restaurant.frequency = Int(frequencyText)
-
-        let distance = Double(distanceText.replacingOccurrences(of: ",", with: "."))
-        restaurant.distanceMiles = distance
+        restaurant.distanceMiles = Double(distanceText.replacingOccurrences(of: ",", with: "."))
     }
 }

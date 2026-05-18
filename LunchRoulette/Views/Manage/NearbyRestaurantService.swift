@@ -10,7 +10,7 @@ import MapKit
 import CoreLocation
 
 struct NearbyRestaurantService {
-    func searchNearbyRestaurants(from location: CLLocation, limit: Int = 10) async throws -> [RestaurantCandidate] {
+    func searchNearbyRestaurants(from location: CLLocation, limit: Int = 50) async throws -> [RestaurantCandidate] {
         let request = MKLocalSearch.Request()
         request.naturalLanguageQuery = "restaurant"
         request.resultTypes = .pointOfInterest
@@ -33,14 +33,14 @@ struct NearbyRestaurantService {
             let placeLocation = item.location
             let meters = location.distance(from: placeLocation)
             let distanceMiles = meters / 1609.344
-
             let address = formattedAddress(from: item)
+            let foodType = categoryText(from: item)
 
             return RestaurantCandidate(
                 source: .nearby,
                 name: name,
                 detailsText: nil,
-                foodType: "Nearby Place",
+                foodType: foodType,
                 avgCost: nil,
                 address: address,
                 rating: nil,
@@ -92,5 +92,14 @@ struct NearbyRestaurantService {
 
             return parts.isEmpty ? nil : parts.joined(separator: ", ")
         }
+    }
+
+    private func categoryText(from item: MKMapItem) -> String? {
+        if let raw = item.pointOfInterestCategory?.rawValue {
+            return raw
+                .replacingOccurrences(of: "_", with: " ")
+                .capitalized
+        }
+        return nil
     }
 }

@@ -13,7 +13,6 @@ struct RouletteView: View {
     let lastWinnerRepeatKey: String?
     let onFinished: (RestaurantCandidate) -> Void
 
-
     @Environment(\.dismiss) private var dismiss
 
     @State private var wheelRotation: Double = 0
@@ -119,12 +118,14 @@ struct RouletteView: View {
     private var wheelSection: some View {
         ZStack {
             outerWoodRing
+            goldOuterLip
             wheelBase
                 .rotationEffect(.degrees(wheelRotation))
+            centerShadow
             ballOrbit
             pointer
         }
-        .frame(width: 314, height: 314)
+        .frame(width: 320, height: 320)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Casino roulette")
         .accessibilityValue(accessibilityWheelValue)
@@ -135,25 +136,55 @@ struct RouletteView: View {
             .fill(
                 RadialGradient(
                     colors: [
-                        Color(red: 0.44, green: 0.24, blue: 0.11),
-                        Color(red: 0.20, green: 0.08, blue: 0.03)
+                        Color(red: 0.46, green: 0.27, blue: 0.13),
+                        Color(red: 0.28, green: 0.14, blue: 0.06),
+                        Color(red: 0.16, green: 0.07, blue: 0.03)
                     ],
-                    center: .center,
-                    startRadius: 30,
-                    endRadius: 170
+                    center: .topLeading,
+                    startRadius: 20,
+                    endRadius: 190
                 )
             )
             .overlay(
                 Circle()
-                    .stroke(Color(red: 0.88, green: 0.72, blue: 0.28), lineWidth: 10)
+                    .stroke(Color.black.opacity(0.35), lineWidth: 3)
+                    .blur(radius: 1)
             )
-            .shadow(color: .black.opacity(0.35), radius: 10, y: 8)
+            .shadow(color: .black.opacity(0.45), radius: 14, y: 10)
+    }
+
+    private var goldOuterLip: some View {
+        Circle()
+            .stroke(
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.97, green: 0.86, blue: 0.46),
+                        Color(red: 0.78, green: 0.59, blue: 0.16),
+                        Color(red: 0.95, green: 0.84, blue: 0.42)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                lineWidth: 10
+            )
+            .frame(width: 308, height: 308)
+            .shadow(color: .yellow.opacity(0.15), radius: 4)
     }
 
     private var wheelBase: some View {
         ZStack {
             Circle()
-                .fill(Color(red: 0.12, green: 0.06, blue: 0.03))
+                .fill(
+                    RadialGradient(
+                        colors: [
+                            Color(red: 0.16, green: 0.08, blue: 0.04),
+                            Color(red: 0.09, green: 0.04, blue: 0.02)
+                        ],
+                        center: .topLeading,
+                        startRadius: 30,
+                        endRadius: 170
+                    )
+                )
                 .frame(width: 286, height: 286)
 
             ForEach(Array(numberedChoices.enumerated()), id: \.element.candidate.id) { index, entry in
@@ -167,56 +198,158 @@ struct RouletteView: View {
             }
 
             Circle()
-                .stroke(Color(red: 0.88, green: 0.72, blue: 0.28), lineWidth: 3)
+                .stroke(
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.98, green: 0.86, blue: 0.44),
+                            Color(red: 0.72, green: 0.53, blue: 0.14)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
+                    lineWidth: 3
+                )
                 .frame(width: 286, height: 286)
+
+            Circle()
+                .stroke(Color.white.opacity(0.12), lineWidth: 2)
+                .frame(width: 274, height: 274)
+                .blur(radius: 0.5)
 
             ForEach(0..<36, id: \.self) { spoke in
                 Capsule()
-                    .fill(Color(red: 0.86, green: 0.68, blue: 0.22).opacity(0.35))
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.92, green: 0.76, blue: 0.30).opacity(0.55),
+                                Color(red: 0.63, green: 0.46, blue: 0.10).opacity(0.20)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
                     .frame(width: 2, height: 130)
                     .offset(y: -20)
                     .rotationEffect(.degrees(Double(spoke) * 10))
             }
 
+            centerHub
+        }
+    }
+
+    private var centerHub: some View {
+        ZStack {
             Circle()
-                .fill(Color(red: 0.30, green: 0.12, blue: 0.05))
-                .frame(width: 112, height: 112)
-                .overlay(
-                    Circle()
-                        .stroke(Color(red: 0.88, green: 0.72, blue: 0.28), lineWidth: 4)
+                .fill(
+                    RadialGradient(
+                        colors: [
+                            Color(red: 0.36, green: 0.16, blue: 0.07),
+                            Color(red: 0.22, green: 0.09, blue: 0.04)
+                        ],
+                        center: .topLeading,
+                        startRadius: 10,
+                        endRadius: 80
+                    )
                 )
+                .frame(width: 116, height: 116)
+
+            Circle()
+                .stroke(
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.98, green: 0.86, blue: 0.44),
+                            Color(red: 0.72, green: 0.53, blue: 0.14)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
+                    lineWidth: 4
+                )
+                .frame(width: 116, height: 116)
+
+            Circle()
+                .fill(Color.white.opacity(0.06))
+                .frame(width: 88, height: 88)
+                .offset(x: -8, y: -10)
 
             ForEach(0..<8, id: \.self) { arm in
                 Capsule()
-                    .fill(Color(red: 0.86, green: 0.68, blue: 0.22))
-                    .frame(width: 70, height: 7)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.96, green: 0.81, blue: 0.36),
+                                Color(red: 0.69, green: 0.50, blue: 0.13)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 74, height: 8)
                     .rotationEffect(.degrees(Double(arm) * 45))
+                    .shadow(color: .black.opacity(0.15), radius: 1, y: 1)
             }
 
             Circle()
-                .fill(Color(red: 0.90, green: 0.74, blue: 0.26))
-                .frame(width: 24, height: 24)
-                .shadow(radius: 2)
+                .fill(
+                    RadialGradient(
+                        colors: [
+                            Color(red: 0.99, green: 0.88, blue: 0.48),
+                            Color(red: 0.78, green: 0.59, blue: 0.16)
+                        ],
+                        center: .topLeading,
+                        startRadius: 2,
+                        endRadius: 18
+                    )
+                )
+                .frame(width: 26, height: 26)
+                .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
         }
+    }
+
+    private var centerShadow: some View {
+        Circle()
+            .fill(Color.black.opacity(0.12))
+            .frame(width: 70, height: 70)
+            .blur(radius: 6)
+            .offset(y: 8)
+            .accessibilityHidden(true)
     }
 
     private var ballOrbit: some View {
         GeometryReader { geo in
             let size = min(geo.size.width, geo.size.height)
-            let radius = size / 2 - 24
+            let radius = size / 2 - 25
             let x = cos(ballAngle.radians) * radius
             let y = sin(ballAngle.radians) * radius
 
             ZStack {
+                Ellipse()
+                    .fill(Color.black.opacity(0.20))
+                    .frame(width: 16, height: 8)
+                    .position(x: geo.size.width / 2 + x + 3, y: geo.size.height / 2 + y + 4)
+
                 Circle()
-                    .fill(.white.opacity(0.12))
-                    .frame(width: 26, height: 26)
+                    .fill(.white.opacity(0.10))
+                    .frame(width: 28, height: 28)
                     .position(x: geo.size.width / 2 + x, y: geo.size.height / 2 + y)
 
                 Circle()
-                    .fill(.white)
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                Color.white,
+                                Color(red: 0.93, green: 0.93, blue: 0.95)
+                            ],
+                            center: .topLeading,
+                            startRadius: 1,
+                            endRadius: 12
+                        )
+                    )
+                    .overlay(
+                        Circle()
+                            .stroke(Color.white.opacity(0.8), lineWidth: 1)
+                    )
                     .frame(width: 12, height: 12)
-                    .shadow(color: .black.opacity(0.25), radius: 3, y: 2)
                     .position(x: geo.size.width / 2 + x, y: geo.size.height / 2 + y)
             }
             .accessibilityHidden(true)
@@ -226,12 +359,30 @@ struct RouletteView: View {
     private var pointer: some View {
         VStack(spacing: 0) {
             TrianglePointer()
-                .fill(Color(red: 0.92, green: 0.74, blue: 0.22))
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.97, green: 0.85, blue: 0.43),
+                            Color(red: 0.72, green: 0.53, blue: 0.14)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
                 .frame(width: 30, height: 24)
-                .shadow(radius: 2, y: 1)
+                .shadow(color: .black.opacity(0.2), radius: 2, y: 1)
 
             RoundedRectangle(cornerRadius: 2)
-                .fill(Color(red: 0.92, green: 0.74, blue: 0.22))
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.97, green: 0.85, blue: 0.43),
+                            Color(red: 0.72, green: 0.53, blue: 0.14)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
                 .frame(width: 6, height: 16)
 
             Spacer()
@@ -259,7 +410,16 @@ struct RouletteView: View {
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 18)
-                .fill(Color(red: 0.05, green: 0.42, blue: 0.20))
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.06, green: 0.42, blue: 0.20),
+                            Color(red: 0.04, green: 0.32, blue: 0.15)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
                 .overlay(
                     RoundedRectangle(cornerRadius: 18)
                         .stroke(Color.white.opacity(0.20), lineWidth: 2)
@@ -451,6 +611,7 @@ struct RouletteView: View {
                 return Int.random(in: 0..<choices.count)
             }
         }()
+
         let winner = choices[winnerIndex].withWinningNumber(winnerIndex + 1)
 
         let sliceAngle = 360.0 / Double(choices.count)
@@ -566,7 +727,16 @@ private struct CasinoNumberWheelSliceView: View {
         GeometryReader { geo in
             ZStack {
                 WheelSlicePath(index: index, total: total)
-                    .fill(color)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                color.opacity(0.96),
+                                color.opacity(0.78)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
 
                 WheelSlicePath(index: index, total: total)
                     .stroke(Color(red: 0.88, green: 0.72, blue: 0.28), lineWidth: 1.2)

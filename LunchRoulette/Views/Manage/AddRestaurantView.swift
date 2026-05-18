@@ -14,17 +14,23 @@ struct AddRestaurantView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
 
+    @AppStorage(FoodTypeCatalog.storageKey) private var foodTypeOptionsRawValue: String = FoodTypeCatalog.encode(FoodTypeCatalog.defaultTypes)
+
     @State private var name = ""
-    @State private var detailsText = ""
-    @State private var foodType = ""
+    @State private var selectedFoodType = ""
     @State private var avgCost = ""
     @State private var address = ""
     @State private var ratingText = ""
     @State private var frequencyText = ""
     @State private var distanceText = ""
+    @State private var detailsText = ""
 
     @State private var photoItem: PhotosPickerItem? = nil
     @State private var photoData: Data? = nil
+
+    private var foodTypeOptions: [String] {
+        FoodTypeCatalog.decode(foodTypeOptionsRawValue)
+    }
 
     var body: some View {
         Form {
@@ -36,9 +42,10 @@ struct AddRestaurantView: View {
                 PhotosPicker(selection: $photoItem, matching: .images) {
                     HStack {
                         Image(systemName: "photo.on.rectangle")
-                        Text("Pick Photo")
+                        Text("Choose Photo")
                     }
                 }
+
                 if let photoData, let uiImage = UIImage(data: photoData) {
                     Image(uiImage: uiImage)
                         .resizable()
@@ -47,21 +54,36 @@ struct AddRestaurantView: View {
                         .clipped()
                         .clipShape(RoundedRectangle(cornerRadius: 14))
                         .padding(.vertical, 6)
+
+                    Button(role: .destructive) {
+                        self.photoData = nil
+                    } label: {
+                        Label("Remove Photo", systemImage: "trash")
+                    }
+                } else {
+                    Text("No photo")
+                        .foregroundStyle(.secondary)
                 }
             }
 
             Section("Details") {
-                TextField("Type of food", text: $foodType)
-                TextField("Average cost (e.g. $$)", text: $avgCost)
+                Picker("Type of food", selection: $selectedFoodType) {
+                    Text("None").tag("")
+                    ForEach(foodTypeOptions, id: \.self) { type in
+                        Text(type).tag(type)
+                    }
+                }
+
+                TextField("Average cost", text: $avgCost)
                 TextField("Address", text: $address)
 
-                TextField("Rating (0–5, optional)", text: $ratingText)
+                TextField("Rating (0–5)", text: $ratingText)
                     .keyboardType(.decimalPad)
 
-                TextField("Frequency (optional)", text: $frequencyText)
+                TextField("Frequency", text: $frequencyText)
                     .keyboardType(.numberPad)
 
-                TextField("Distance miles (optional)", text: $distanceText)
+                TextField("Distance miles", text: $distanceText)
                     .keyboardType(.decimalPad)
 
                 TextEditor(text: $detailsText)
@@ -71,44 +93,56 @@ struct AddRestaurantView: View {
         .navigationTitle("Add Restaurant")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") { dismiss() }
-            }
             ToolbarItem(placement: .confirmationAction) {
-                Button("Save") { save() }
-                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button("Save") {
+                    saveRestaurant()
+                }
+                .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") {
+                    dismiss()
+                }
             }
         }
         .onChange(of: photoItem) { _, newItem in
             guard let newItem else { return }
             Task {
                 if let data = try? await newItem.loadTransferable(type: Data.self) {
-                    await MainActor.run { self.photoData = data }
+                    await MainActor.run {
+                        photoData = data
+                    }
                 }
             }
         }
     }
 
-    private func save() {
+    private func saveRestaurant() {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { return }
+
+        let trimmedCost = avgCost.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedAddress = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedDetails = detailsText.trimmingCharacters(in: .whitespacesAndNewlines)
 
         let rating = Double(ratingText.replacingOccurrences(of: ",", with: "."))
         let frequency = Int(frequencyText)
         let distance = Double(distanceText.replacingOccurrences(of: ",", with: "."))
 
-        let r = Restaurant(
+        let restaurant = Restaurant(
             name: trimmedName,
-            detailsText: detailsText.isEmpty ? nil : detailsText,
-            foodType: foodType.isEmpty ? nil : foodType,
-            avgCost: avgCost.isEmpty ? nil : avgCost,
-            address: address.isEmpty ? nil : address,
+            detailsText: trimmedDetails.isEmpty ? nil : trimmedDetails,
+            foodType: selectedFoodType.isEmpty ? nil : selectedFoodType,
+            avgCost: trimmedCost.isEmpty ? nil : trimmedCost,
+            address: trimmedAddress.isEmpty ? nil : trimmedAddress,
             rating: rating,
             frequency: frequency,
             distanceMiles: distance,
             photoData: photoData
         )
 
-        modelContext.insert(r)
+        modelContext.insert(restaurant)
         dismiss()
     }
 }

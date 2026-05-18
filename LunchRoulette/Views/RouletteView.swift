@@ -10,7 +10,9 @@ import SwiftUI
 struct RouletteView: View {
     let choices: [RestaurantCandidate]
     let spinDuration: Double
+    let lastWinnerRepeatKey: String?
     let onFinished: (RestaurantCandidate) -> Void
+
 
     @Environment(\.dismiss) private var dismiss
 
@@ -436,7 +438,19 @@ struct RouletteView: View {
         winnerFlash = false
         winnerPop = false
 
-        let winnerIndex = Int.random(in: 0..<choices.count)
+        let winnerIndex: Int = {
+            guard choices.count > 1, let lastWinnerRepeatKey else {
+                return Int.random(in: 0..<choices.count)
+            }
+
+            let eligibleIndices = choices.indices.filter { choices[$0].repeatKey != lastWinnerRepeatKey }
+
+            if let chosen = eligibleIndices.randomElement() {
+                return chosen
+            } else {
+                return Int.random(in: 0..<choices.count)
+            }
+        }()
         let winner = choices[winnerIndex].withWinningNumber(winnerIndex + 1)
 
         let sliceAngle = 360.0 / Double(choices.count)

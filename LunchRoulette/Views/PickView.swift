@@ -5,6 +5,7 @@
 //  Created by Keiny.Grau.a1 on 2026-03-16.
 //
 
+
 import SwiftUI
 import SwiftData
 import CoreLocation
@@ -25,9 +26,12 @@ struct PickView: View {
     @AppStorage("rouletteSpinDuration") private var rouletteSpinDuration: Double = 2.8
 
     @State private var availableChoices: [RestaurantCandidate] = []
+    @State private var rawNearbyChoices: [RestaurantCandidate] = []
+
     @State private var selectedCandidate: RestaurantCandidate? = nil
     @State private var showResult = false
     @State private var showRoulette = false
+    @State private var lastWinnerRepeatKey: String? = nil
 
     @State private var selectedSourceMode: RestaurantSourceMode = .local
 
@@ -35,6 +39,7 @@ struct PickView: View {
     @State private var nearbyErrorMessage: String? = nil
     @State private var pendingNearbySearchAfterPermission = false
     @State private var nearbyStatusMessage: String? = nil
+    @State private var nearbyDistanceLimit: Double = 25
 
     @State private var selectedIDs: Set<UUID> = []
     @State private var selectedOrder: [UUID] = []
@@ -44,7 +49,7 @@ struct PickView: View {
     private let nearbyService = NearbyRestaurantService()
 
     private var selectedChoices: [RestaurantCandidate] {
-        let lookup = Dictionary(uniqueKeysWithValues: availableChoices.map{($0.id, $0)})
+        let lookup = Dictionary(uniqueKeysWithValues: availableChoices.map { ($0.id, $0) })
         return selectedOrder.compactMap { lookup[$0] }
     }
 
@@ -89,6 +94,7 @@ struct PickView: View {
                     loadLocalChoices()
                 } else {
                     availableChoices = []
+                    rawNearbyChoices = []
                     selectedIDs = []
                     selectedOrder = []
                     nearbyErrorMessage = nil
@@ -103,10 +109,13 @@ struct PickView: View {
                 case .local:
                     pendingNearbySearchAfterPermission = false
                     nearbyStatusMessage = nil
+                    nearbyErrorMessage = nil
+                    rawNearbyChoices = []
                     loadLocalChoices()
 
                 case .nearby:
                     availableChoices = []
+                    rawNearbyChoices = []
                     nearbyErrorMessage = nil
                     nearbyStatusMessage = nil
                 }
@@ -135,6 +144,10 @@ struct PickView: View {
                     nearbyErrorMessage = "An unknown location authorization state occurred."
                 }
             }
+            .onChange(of: nearbyDistanceLimit) { _, _ in
+                guard selectedSourceMode == .nearby else { return }
+                applyNearbyDistanceFilter()
+            }
             .navigationDestination(isPresented: $showResult) {
                 if let selectedCandidate {
                     ResultView(candidate: selectedCandidate)
@@ -143,9 +156,11 @@ struct PickView: View {
             .sheet(isPresented: $showRoulette) {
                 RouletteView(
                     choices: selectedChoices,
-                    spinDuration: rouletteSpinDuration
+                    spinDuration: rouletteSpinDuration,
+                    lastWinnerRepeatKey: lastWinnerRepeatKey
                 ) { winner in
                     selectedCandidate = winner
+                    lastWinnerRepeatKey = winner.repeatKey
                     showResult = true
                 }
             }
@@ -189,76 +204,115 @@ struct PickView: View {
     }
 
     private var content: some View {
-        VStack(spacing: 12) {
-            sourcePickerCard
-            selectionSummaryCard
-            listContent
+        ScrollView {
+            VStack(spacing: 12) {
+                sourcePickerCard
+                selectionSummaryCard
+                restaurantSelectionSection
+            }
+            .padding(.top, 8)
+            .padding(.bottom, 16)
         }
-        .padding(.top, 8)
     }
 
     private var nearbyContent: some View {
-        VStack(spacing: 12) {
-            sourcePickerCard
-
+        Group {
             if isLoadingNearby {
-                nearbyStatusCard
-                Spacer()
-                ProgressView("Working...")
-                Spacer()
-            } else if availableChoices.isEmpty {
-                VStack(spacing: 14) {
-                    if nearbyStatusMessage != nil {
+                ScrollView {
+                    VStack(spacing: 12) {
+                        sourcePickerCard
+                        nearbyDistanceFilterCard
                         nearbyStatusCard
+
+                        VStack(spacing: 16) {
+                            Spacer(minLength: 20)
+                            ProgressView("Working...")
+                            Spacer(minLength: 20)
+                        }
+                        .frame(maxWidth: .infinity)
                     }
+                    .padding(.top, 8)
+                    .padding(.bottom, 16)
+                }
+            } else if availableChoices.isEmpty {
+                ScrollView {
+                    VStack(spacing: 14) {
+                        sourcePickerCard
+                        nearbyDistanceFilterCard
 
-                    Spacer()
+                        if nearbyStatusMessage != nil {
+                            nearbyStatusCard
+                        }
 
-                    Image(systemName: "location.magnifyingglass")
-                        .font(.system(size: 42))
-                        .foregroundStyle(.orange)
+                        Spacer(minLength: 20)
 
-                    Text("Find restaurants near you")
-                        .font(.title3)
-                        .fontWeight(.bold)
+                        Image(systemName: "location.magnifyingglass")
+                            .font(.system(size: 42))
+                            .foregroundStyle(.orange)
 
-                    Text("Use your current location to find nearby restaurants for a random lunch pick.")
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(.secondary)
+                        Text("Find restaurants near you")
+                            .font(.title3)
+                            .fontWeight(.bold)
+
+                        Text("Use your current location to find nearby restaurants for a random lunch pick.")
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal)
+
+                        Button {
+                            Task { await loadNearbyChoices() }
+                        } label: {
+                            Label("Find Nearby Restaurants", systemImage: "location.fill")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
                         .padding(.horizontal)
+                        .accessibilityHint("Uses your current location to search for nearby restaurants.")
 
-                    Button {
-                        Task { await loadNearbyChoices() }
-                    } label: {
-                        Label("Find Nearby Restaurants", systemImage: "location.fill")
-                            .frame(maxWidth: .infinity)
+                        Spacer(minLength: 20)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .padding(.horizontal)
-                    .accessibilityHint("Uses your current location to search for nearby restaurants.")
-
-                    Spacer()
+                    .padding(.top, 8)
+                    .padding(.bottom, 16)
                 }
             } else {
-                VStack(spacing: 12) {
-                    nearbyStatusCard
-                    selectionSummaryCard
-                    listContent
+                ScrollView {
+                    VStack(spacing: 12) {
+                        sourcePickerCard
+                        nearbyDistanceFilterCard
+                        nearbyStatusCard
+                        selectionSummaryCard
+                        restaurantSelectionSection
+                    }
+                    .padding(.top, 8)
+                    .padding(.bottom, 16)
                 }
             }
         }
-        .padding(.top, 8)
     }
 
-    private var listContent: some View {
-        VStack(spacing: 12) {
-            Text("Available choices: \(availableChoices.count)")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+    private var restaurantSelectionSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Available choices: \(availableChoices.count)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
 
-            List {
-                Section("Select up to 10 restaurants") {
-                    ForEach(availableChoices) { candidate in
+                Spacer()
+            }
+            .padding(.horizontal)
+
+            VStack(spacing: 0) {
+                HStack {
+                    Text("Select up to 10 restaurants")
+                        .font(.headline)
+                    Spacer()
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, 14)
+                .padding(.bottom, 8)
+
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(availableChoices.enumerated()), id: \.element.id) { index, candidate in
                         Button {
                             toggleSelection(for: candidate)
                         } label: {
@@ -269,31 +323,49 @@ struct PickView: View {
                                 selectionMode: true,
                                 isSelectionDisabled: selectedIDs.count >= maxSelections && !selectedIDs.contains(candidate.id)
                             )
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .accessibilityHint("Selects or deselects this restaurant for the roulette.")
+
+                        if index < availableChoices.count - 1 {
+                            Divider()
+                                .padding(.leading, 70)
+                                .padding(.trailing, 14)
+                        }
                     }
                 }
 
-                Section {
-                    Button {
-                        showRoulette = true
-                    } label: {
-                        HStack {
-                            Spacer()
-                            Image(systemName: "shuffle")
-                            Text("Choose for me")
-                                .fontWeight(.semibold)
-                            Spacer()
-                        }
+                Divider()
+                    .padding(.top, 2)
+
+                Button {
+                    showRoulette = true
+                } label: {
+                    HStack {
+                        Spacer()
+                        Image(systemName: "shuffle")
+                        Text("Choose for me")
+                            .fontWeight(.semibold)
+                        Spacer()
                     }
-                    .disabled(selectedChoices.count < 2)
-                    .accessibilityLabel("Choose a restaurant for me")
-                    .accessibilityHint("Starts the roulette using the selected restaurants.")
+                    .padding(.vertical, 12)
                 }
+                .buttonStyle(.plain)
+                .disabled(selectedChoices.count < 2)
+                .opacity(selectedChoices.count < 2 ? 0.45 : 1.0)
+                .accessibilityLabel("Choose a restaurant for me")
+                .accessibilityHint("Starts the roulette using the selected restaurants.")
+                .padding(.horizontal, 14)
+                .padding(.bottom, 10)
             }
-            .scrollContentBackground(.hidden)
-            .background(Color.clear)
+            .background(
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(.thinMaterial)
+            )
+            .padding(.horizontal)
         }
     }
 
@@ -349,6 +421,17 @@ struct PickView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
+            if !selectedChoices.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(selectedChoices) { candidate in
+                            selectedChip(for: candidate)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+
             if selectedChoices.count == maxSelections {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.circle.fill")
@@ -386,7 +469,7 @@ struct PickView: View {
         )
         .padding(.horizontal)
     }
-    
+
     private var nearbyStatusCard: some View {
         Group {
             if let nearbyStatusMessage, !nearbyStatusMessage.isEmpty {
@@ -414,11 +497,39 @@ struct PickView: View {
         }
     }
 
-    @MainActor
-    private func loadLocalChoices() {
-        availableChoices = allRestaurants.map { RestaurantCandidate(from: $0) }
-        selectedIDs.removeAll()
-        selectedOrder.removeAll()
+    private var nearbyDistanceFilterCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Distance filter")
+                    .font(.headline)
+
+                Spacer()
+
+                Text("\(Int(nearbyDistanceLimit)) miles")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            Slider(value: $nearbyDistanceLimit, in: 1...100, step: 1)
+
+            HStack {
+                Text("1 mi")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                Text("100 mi")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(.thinMaterial)
+        )
+        .padding(.horizontal)
     }
 
     @ViewBuilder
@@ -447,12 +558,21 @@ struct PickView: View {
                 .fill(Color.white.opacity(0.16))
         )
     }
-    
+
+    @MainActor
+    private func loadLocalChoices() {
+        availableChoices = allRestaurants.map { RestaurantCandidate(from: $0) }
+        rawNearbyChoices = []
+        selectedIDs.removeAll()
+        selectedOrder.removeAll()
+    }
+
     private func loadNearbyChoices() async {
         isLoadingNearby = true
         nearbyErrorMessage = nil
         nearbyStatusMessage = "Preparing nearby search..."
         availableChoices = []
+        rawNearbyChoices = []
         selectedIDs = []
         selectedOrder = []
 
@@ -463,15 +583,16 @@ struct PickView: View {
             let location = try await locationManager.requestCurrentLocation()
 
             nearbyStatusMessage = "Searching nearby restaurants..."
-            let results = try await nearbyService.searchNearbyRestaurants(from: location, limit: 20)
+            let results = try await nearbyService.searchNearbyRestaurants(from: location, limit: 50)
 
-            if results.isEmpty {
+            rawNearbyChoices = results
+            applyNearbyDistanceFilter()
+
+            if availableChoices.isEmpty {
                 nearbyStatusMessage = nil
-                nearbyErrorMessage = "No nearby restaurants were found for your current location."
+                nearbyErrorMessage = "No nearby restaurants were found within \(Int(nearbyDistanceLimit)) miles."
             } else {
-                availableChoices = results
-                syncSelectionOrder()
-                nearbyStatusMessage = "Found \(results.count) nearby restaurant\(results.count == 1 ? "" : "s")."
+                nearbyStatusMessage = "Found \(availableChoices.count) nearby restaurant\(availableChoices.count == 1 ? "" : "s") within \(Int(nearbyDistanceLimit)) miles."
             }
         } catch let error as LocationError {
             switch error {
@@ -489,6 +610,28 @@ struct PickView: View {
             pendingNearbySearchAfterPermission = false
             nearbyStatusMessage = nil
             nearbyErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func applyNearbyDistanceFilter() {
+        guard selectedSourceMode == .nearby else { return }
+
+        let filtered = rawNearbyChoices.filter { candidate in
+            guard let distance = candidate.distanceMiles else { return false }
+            return distance <= nearbyDistanceLimit
+        }
+
+        availableChoices = filtered
+        syncSelectionOrder()
+
+        if !isLoadingNearby && !rawNearbyChoices.isEmpty {
+            if availableChoices.isEmpty {
+                nearbyStatusMessage = nil
+                nearbyErrorMessage = "No nearby restaurants were found within \(Int(nearbyDistanceLimit)) miles."
+            } else {
+                nearbyStatusMessage = "Found \(availableChoices.count) nearby restaurant\(availableChoices.count == 1 ? "" : "s") within \(Int(nearbyDistanceLimit)) miles."
+                nearbyErrorMessage = nil
+            }
         }
     }
 
@@ -513,7 +656,7 @@ struct PickView: View {
         selectedIDs = selectedIDs.intersection(availableIDSet)
         selectedOrder = selectedOrder.filter { availableIDSet.contains($0) && selectedIDs.contains($0) }
     }
-    
+
     @MainActor
     private func isCandidateSavedLocally(_ candidate: RestaurantCandidate) -> Bool {
         guard candidate.source == .nearby else { return false }

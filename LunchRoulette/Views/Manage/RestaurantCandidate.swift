@@ -82,7 +82,7 @@ extension RestaurantCandidate {
             winningNumber: nil
         )
     }
-
+    
     func withWinningNumber(_ number: Int?) -> RestaurantCandidate {
         RestaurantCandidate(
             id: id,
@@ -102,3 +102,10 @@ extension RestaurantCandidate {
         )
     }
 }
+    extension RestaurantCandidate {
+        var repeatKey: String {
+            let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let normalizedAddress = address?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+            return "\(normalizedName)|\(normalizedAddress)"
+        }
+    }

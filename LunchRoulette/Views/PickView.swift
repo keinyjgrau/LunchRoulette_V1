@@ -28,7 +28,6 @@ struct PickView: View {
     @State private var rawLocalChoices: [RestaurantCandidate] = []
     @State private var rawNearbyChoices: [RestaurantCandidate] = []
     @State private var availableChoices: [RestaurantCandidate] = []
-    @State private var rawNearbyChoices: [RestaurantCandidate] = []
 
     @State private var selectedCandidate: RestaurantCandidate? = nil
     @State private var showResult = false
@@ -41,7 +40,6 @@ struct PickView: View {
     @State private var nearbyErrorMessage: String? = nil
     @State private var pendingNearbySearchAfterPermission = false
     @State private var nearbyStatusMessage: String? = nil
-    @State private var nearbyDistanceLimit: Double = 25
 
     @State private var selectedIDs: Set<UUID> = []
     @State private var selectedOrder: [UUID] = []
@@ -65,17 +63,15 @@ struct PickView: View {
     }
 
     private var categoryOptions: [String] {
-        let categories: [String] = currentRawChoices.compactMap { candidate in
-            guard let value = candidate.foodType?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !value.isEmpty else {
-                return nil
-            }
-            return value
-        }
-
-        return ["Any"] + Array(Set(categories)).sorted()
+        let categories: [String] =
+            currentRawChoices
+                .compactMap { candidate in
+                    guard let value = candidate.foodType?.trimmingCharacters(in: .whitespacesAndNewlines),
+                          !value.isEmpty else { return nil }
+                    return value
+                }
+        return ["Any"] + categories.sorted()
     }
-
 
     var body: some View {
         NavigationStack {
@@ -120,7 +116,6 @@ struct PickView: View {
                     rawLocalChoices = []
                     rawNearbyChoices = []
                     availableChoices = []
-                    rawNearbyChoices = []
                     selectedIDs = []
                     selectedOrder = []
                     nearbyErrorMessage = nil
@@ -138,13 +133,11 @@ struct PickView: View {
                     pendingNearbySearchAfterPermission = false
                     nearbyStatusMessage = nil
                     nearbyErrorMessage = nil
-                    rawNearbyChoices = []
                     loadLocalChoices()
 
                 case .nearby:
                     rawNearbyChoices = []
                     availableChoices = []
-                    rawNearbyChoices = []
                     nearbyErrorMessage = nil
                     nearbyStatusMessage = nil
                     applyActiveFilters()
@@ -613,41 +606,6 @@ struct PickView: View {
         }
     }
 
-    private var nearbyDistanceFilterCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Distance filter")
-                    .font(.headline)
-
-                Spacer()
-
-                Text("\(Int(nearbyDistanceLimit)) miles")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-
-            Slider(value: $nearbyDistanceLimit, in: 1...100, step: 1)
-
-            HStack {
-                Text("1 mi")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Spacer()
-
-                Text("100 mi")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(.thinMaterial)
-        )
-        .padding(.horizontal)
-    }
-
     @ViewBuilder
     private func selectedChip(for candidate: RestaurantCandidate) -> some View {
         let orderIndex = (selectedOrder.firstIndex(of: candidate.id) ?? 0) + 1
@@ -778,7 +736,6 @@ struct PickView: View {
                 nearbyStatusMessage = nil
                 nearbyErrorMessage = "No nearby restaurants matched your current filters."
             } else {
-                nearbyStatusMessage = "Found \(availableChoices.count) nearby restaurant\(availableChoices.count == 1 ? "" : "s") within \(Int(nearbyDistanceLimit)) miles."
                 nearbyErrorMessage = nil
                 nearbyStatusMessage = "Found \(availableChoices.count) nearby restaurant\(availableChoices.count == 1 ? "" : "s")."
             }

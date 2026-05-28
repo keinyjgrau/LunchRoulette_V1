@@ -15,6 +15,7 @@ private enum AppTab: Hashable {
 }
 
 struct RootTabsView: View {
+    @AppStorage("appLanguage") private var appLanguage = AppLanguageOption.system.rawValue
     @State private var selectedTab: AppTab = .home
 
     var body: some View {
@@ -27,25 +28,25 @@ struct RootTabsView: View {
                 )
             }
             .tabItem {
-                Label("Home", systemImage: "house")
+                Label(AppText.tabHome(appLanguage), systemImage: "house")
             }
             .tag(AppTab.home)
 
             PickView()
                 .tabItem {
-                    Label("Pick", systemImage: "fork.knife")
+                    Label(AppText.tabPick(appLanguage), systemImage: "fork.knife")
                 }
                 .tag(AppTab.pick)
 
             ManageRestaurantsView()
                 .tabItem {
-                    Label("Manage", systemImage: "list.bullet.rectangle")
+                    Label(AppText.tabManage(appLanguage), systemImage: "list.bullet.rectangle")
                 }
                 .tag(AppTab.manage)
 
             SettingsView()
                 .tabItem {
-                    Label("Settings", systemImage: "gearshape")
+                    Label(AppText.tabSettings(appLanguage), systemImage: "gearshape")
                 }
                 .tag(AppTab.settings)
         }

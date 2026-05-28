@@ -8,6 +8,8 @@
 import SwiftUI
 
 struct RestaurantRow: View {
+    @AppStorage("appLanguage") private var appLanguage = AppLanguageOption.system.rawValue
+
     let candidate: RestaurantCandidate
     let isSavedLocally: Bool
     let isSelected: Bool
@@ -39,7 +41,7 @@ struct RestaurantRow: View {
                         .lineLimit(1)
 
                     if isSavedLocally && candidate.source == .nearby {
-                        Text("Saved")
+                        Text(AppText.saved(appLanguage))
                             .font(.caption2)
                             .fontWeight(.semibold)
                             .padding(.horizontal, 8)
@@ -87,7 +89,6 @@ struct RestaurantRow: View {
         .opacity(isSelectionDisabled ? 0.45 : 1.0)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilitySummary)
-        .accessibilityHint(selectionMode ? "Double-tap to select or deselect." : "Double-tap to view details.")
     }
 
     @ViewBuilder
@@ -136,27 +137,23 @@ struct RestaurantRow: View {
         }
 
         if let cost = candidate.avgCost, !cost.isEmpty {
-            parts.append("Cost \(cost)")
+            parts.append(cost)
         }
 
         if let rating = candidate.rating {
-            parts.append("Rating \(String(format: "%.1f", rating)) out of 5")
+            parts.append("Rating \(String(format: "%.1f", rating))")
         }
 
         if let miles = candidate.distanceMiles {
-            parts.append("\(String(format: "%.1f", miles)) miles away")
+            parts.append("\(String(format: "%.1f", miles)) miles")
         }
 
         if isSavedLocally && candidate.source == .nearby {
-            parts.append("Saved locally")
+            parts.append(AppText.saved(appLanguage))
         }
 
         if selectionMode {
-            parts.append(isSelected ? "Selected" : "Not selected")
-        }
-
-        if isSelectionDisabled {
-            parts.append("Selection limit reached")
+            parts.append(isSelected ? AppText.saved(appLanguage) : "")
         }
 
         return parts.joined(separator: ", ")

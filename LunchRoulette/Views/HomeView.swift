@@ -8,6 +8,8 @@
 import SwiftUI
 
 struct HomeView: View {
+    @AppStorage("appLanguage") private var appLanguage = AppLanguageOption.system.rawValue
+
     let onChooseLunch: () -> Void
     let onManageRestaurants: () -> Void
     let onOpenSettings: () -> Void
@@ -21,9 +23,9 @@ struct HomeView: View {
 
             LinearGradient(
                 colors: [
-                    Color.black.opacity(0.18),
-                    Color.black.opacity(0.10),
-                    Color.black.opacity(0.48)
+                    Color.black.opacity(0.14),
+                    Color.black.opacity(0.08),
+                    Color.black.opacity(0.30)
                 ],
                 startPoint: .top,
                 endPoint: .bottom
@@ -31,52 +33,52 @@ struct HomeView: View {
             .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                Spacer(minLength: 56)
+                Spacer(minLength: 24)
 
-                VStack(spacing: 12) {
-                    Text("Lunch Roulette")
-                        .font(.system(size: 36, weight: .bold, design: .rounded))
+                VStack(spacing: 10) {
+                    Text(AppText.homeTitle(appLanguage))
+                        .font(.system(size: 32, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
-                        .shadow(color: .black.opacity(0.20), radius: 4, y: 2)
+                        .shadow(color: .black.opacity(0.18), radius: 4, y: 2)
 
-                    Text("Choose a place to eat with a fun restaurant roulette experience.")
+                    Text(AppText.homeSubtitle(appLanguage))
                         .font(.subheadline)
                         .foregroundStyle(.white.opacity(0.92))
                         .multilineTextAlignment(.center)
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, 10)
                 }
                 .padding(.horizontal, 18)
-                .padding(.vertical, 18)
+                .padding(.vertical, 14)
                 .background(
                     RoundedRectangle(cornerRadius: 24)
                         .fill(.ultraThinMaterial)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 24)
-                        .stroke(Color.white.opacity(0.20), lineWidth: 1)
+                        .stroke(Color.white.opacity(0.18), lineWidth: 1)
                 )
-                .shadow(color: .black.opacity(0.18), radius: 10, y: 6)
+                .shadow(color: .black.opacity(0.16), radius: 8, y: 5)
                 .padding(.horizontal, 24)
 
                 Spacer()
 
-                VStack(spacing: 14) {
+                VStack(spacing: 10) {
                     homeButton(
-                        title: "Choose Lunch",
+                        title: AppText.homeChooseLunch(appLanguage),
                         systemImage: "fork.knife",
                         isPrimary: true,
                         action: onChooseLunch
                     )
 
                     homeButton(
-                        title: "Restaurants",
+                        title: AppText.homeRestaurants(appLanguage),
                         systemImage: "list.bullet.rectangle",
                         isPrimary: false,
                         action: onManageRestaurants
                     )
 
                     homeButton(
-                        title: "Settings",
+                        title: AppText.homeSettings(appLanguage),
                         systemImage: "gearshape",
                         isPrimary: false,
                         action: onOpenSettings
@@ -85,20 +87,20 @@ struct HomeView: View {
                 .tint(.orange)
                 .padding(.horizontal, 24)
 
-                Spacer(minLength: 26)
+                Spacer(minLength: 4)
 
-                VStack(spacing: 8) {
+                VStack(spacing: 2) {
                     Image(systemName: "sparkles")
-                        .font(.title3)
+                        .font(.caption2)
                         .foregroundStyle(.orange)
 
-                    Text("Pick your restaurants, spin the wheel, and let luck decide.")
-                        .font(.footnote)
-                        .foregroundStyle(.white.opacity(0.88))
+                    Text(AppText.homeFooter(appLanguage))
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.82))
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 28)
                 }
-                .padding(.bottom, 24)
+                .padding(.bottom, 2)
             }
         }
         .navigationBarTitleDisplayMode(.inline)
@@ -122,7 +124,7 @@ struct HomeView: View {
             }
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
+            .padding(.vertical, 12)
             .background(
                 RoundedRectangle(cornerRadius: 18)
                     .fill(
@@ -136,14 +138,14 @@ struct HomeView: View {
                     .stroke(
                         isPrimary
                         ? Color.orange.opacity(0.0)
-                        : Color.white.opacity(0.22),
+                        : Color.white.opacity(0.20),
                         lineWidth: 1
                     )
             )
             .shadow(
-                color: isPrimary ? .black.opacity(0.18) : .clear,
-                radius: isPrimary ? 8 : 0,
-                y: isPrimary ? 4 : 0
+                color: isPrimary ? .black.opacity(0.16) : .clear,
+                radius: isPrimary ? 6 : 0,
+                y: isPrimary ? 3 : 0
             )
         }
         .buttonStyle(.plain)

@@ -8,6 +8,7 @@
 import SwiftUI
 
 struct SettingsView: View {
+    @AppStorage("appLanguage") private var appLanguage = AppLanguageOption.system.rawValue
     @AppStorage("rouletteSpinDuration") private var rouletteSpinDuration: Double = 2.8
     @AppStorage("defaultSourceMode") private var defaultSourceModeRawValue: String = RestaurantSourceMode.local.rawValue
     @AppStorage(FoodTypeCatalog.storageKey) private var foodTypeOptionsRawValue: String = FoodTypeCatalog.encode(FoodTypeCatalog.defaultTypes)
@@ -35,38 +36,40 @@ struct SettingsView: View {
                 AppBackground()
 
                 List {
-                    Section("Preferences") {
-                        Picker("Default restaurant source", selection: selectedSourceModeBinding) {
+                    Section(AppText.preferences(appLanguage)) {
+                        Picker(AppText.defaultRestaurantSource(appLanguage), selection: selectedSourceModeBinding) {
                             ForEach(RestaurantSourceMode.allCases) { mode in
-                                Text(mode.rawValue).tag(mode)
+                                Text(mode.rawValue == "Local" ? AppText.local(appLanguage) : AppText.nearby(appLanguage)).tag(mode)
                             }
                         }
                         .pickerStyle(.segmented)
-                        .accessibilityHint("Sets which restaurant source opens by default on the Choose screen.")
+
+                        Picker(AppText.language(appLanguage), selection: $appLanguage) {
+                            Text(AppText.system(appLanguage)).tag(AppLanguageOption.system.rawValue)
+                            Text(AppText.english(appLanguage)).tag(AppLanguageOption.english.rawValue)
+                            Text(AppText.spanish(appLanguage)).tag(AppLanguageOption.spanish.rawValue)
+                        }
                     }
 
-                    Section("Roulette") {
+                    Section(AppText.roulette(appLanguage)) {
                         VStack(alignment: .leading, spacing: 10) {
                             HStack {
-                                Text("Spin duration")
+                                Text(AppText.spinDuration(appLanguage))
                                 Spacer()
                                 Text(String(format: "%.1f s", rouletteSpinDuration))
                                     .foregroundStyle(.secondary)
                             }
 
                             Slider(value: $rouletteSpinDuration, in: 1.2...4.5, step: 0.1)
-                                .accessibilityLabel("Spin duration")
-                                .accessibilityValue("\(String(format: "%.1f", rouletteSpinDuration)) seconds")
-                                .accessibilityHint("Adjusts how long the roulette spins before choosing a restaurant.")
 
                             HStack {
-                                Text("Faster")
+                                Text(AppText.faster(appLanguage))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
 
                                 Spacer()
 
-                                Text("Slower")
+                                Text(AppText.slower(appLanguage))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -74,11 +77,11 @@ struct SettingsView: View {
                         .padding(.vertical, 4)
                     }
 
-                    Section("Food Types") {
+                    Section(AppText.foodTypes(appLanguage)) {
                         HStack {
-                            TextField("Add new food type", text: $newFoodType)
+                            TextField(AppText.addNewFoodType(appLanguage), text: $newFoodType)
 
-                            Button("Add") {
+                            Button(AppText.add(appLanguage)) {
                                 addFoodType()
                             }
                             .disabled(newFoodType.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -93,15 +96,15 @@ struct SettingsView: View {
                         .onDelete(perform: deleteFoodTypes)
                     }
 
-                    Section("About") {
-                        LabeledContent("App", value: "Lunch Roulette")
-                        LabeledContent("Version", value: "1.0")
+                    Section(AppText.about(appLanguage)) {
+                        LabeledContent(AppText.app(appLanguage), value: "Lunch Roulette")
+                        LabeledContent(AppText.version(appLanguage), value: "1.0")
                     }
                 }
                 .scrollContentBackground(.hidden)
                 .background(Color.clear)
             }
-            .navigationTitle("Settings")
+            .navigationTitle(AppText.settings(appLanguage))
         }
     }
 

@@ -5,11 +5,14 @@
 //  Created by Keiny.Grau.a1 on 2026-03-16.
 //
 
+
 import SwiftUI
 import SwiftData
 import MapKit
 
 struct ResultView: View {
+    @AppStorage("appLanguage") private var appLanguage = AppLanguageOption.system.rawValue
+
     let candidate: RestaurantCandidate
 
     @Environment(\.modelContext) private var modelContext
@@ -57,14 +60,14 @@ struct ResultView: View {
             }
             .padding()
         }
-        .navigationTitle("Your Pick")
+        .navigationTitle(AppText.yourPick(appLanguage))
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             if candidate.source == .nearby {
                 wasImported = alreadyExistsInLocal()
             }
         }
-        .alert("Save Restaurant", isPresented: Binding(
+        .alert(AppText.saveRestaurant(appLanguage), isPresented: Binding(
             get: { importMessage != nil },
             set: { newValue in
                 if !newValue { importMessage = nil }
@@ -85,7 +88,7 @@ struct ResultView: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Selected restaurant")
+                        Text(AppText.selectedRestaurant(appLanguage))
                             .font(.caption)
                             .foregroundStyle(.secondary)
 
@@ -124,7 +127,7 @@ struct ResultView: View {
     @ViewBuilder
     private func winningNumberBadge(number: Int) -> some View {
         VStack(spacing: 4) {
-            Text("Winning")
+            Text(AppText.winning(appLanguage))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
 
@@ -139,28 +142,25 @@ struct ResultView: View {
                     .foregroundStyle(.white)
             }
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Winning number")
-        .accessibilityValue("\(number)")
     }
 
     private var detailsCard: some View {
         VStack(alignment: .leading, spacing: 16) {
-            detailRow(title: "Type of food", value: candidate.foodType)
-            detailRow(title: "Average cost", value: candidate.avgCost)
-            detailRow(title: "Address", value: candidate.address)
+            detailRow(title: AppText.typeOfFood(appLanguage), value: candidate.foodType)
+            detailRow(title: AppText.averageCost(appLanguage), value: candidate.avgCost)
+            detailRow(title: AppText.address(appLanguage), value: candidate.address)
 
             if let miles = candidate.distanceMiles {
-                detailRow(title: "Distance", value: String(format: "%.1f miles", miles))
+                detailRow(title: AppText.distance(appLanguage), value: AppText.distanceValue(miles, appLanguage))
             }
 
             if let freq = candidate.frequency {
-                detailRow(title: "Frequency", value: "\(freq)")
+                detailRow(title: AppText.frequency(appLanguage), value: "\(freq)")
             }
 
             if let desc = candidate.detailsText, !desc.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Description")
+                    Text(AppText.description(appLanguage))
                         .font(.headline)
 
                     Text(desc)
@@ -179,7 +179,7 @@ struct ResultView: View {
 
     private var mapCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Map preview")
+            Text(AppText.mapPreview(appLanguage))
                 .font(.headline)
 
             if let coordinate = placeCoordinate {
@@ -188,9 +188,6 @@ struct ResultView: View {
                 }
                 .frame(height: 220)
                 .clipShape(RoundedRectangle(cornerRadius: 18))
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Map preview")
-                .accessibilityValue(candidate.address ?? candidate.name)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -203,14 +200,14 @@ struct ResultView: View {
 
     private var importCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Save to your list")
+            Text(AppText.saveToYourList(appLanguage))
                 .font(.headline)
 
-            Text("Save this restaurant to your local list so it can appear again in Local mode.")
+            Text(AppText.saveLocalDesc(appLanguage))
                 .foregroundStyle(.secondary)
 
             if wasImported {
-                Label("Saved", systemImage: "checkmark.circle.fill")
+                Label(AppText.saved(appLanguage), systemImage: "checkmark.circle.fill")
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 10)
                     .fontWeight(.semibold)
@@ -219,16 +216,14 @@ struct ResultView: View {
                         RoundedRectangle(cornerRadius: 12)
                             .fill(Color(.tertiarySystemBackground))
                     )
-                    .accessibilityLabel("Saved to your local list")
             } else {
                 Button {
                     importToLocal()
                 } label: {
-                    Label("Save Restaurant", systemImage: "square.and.arrow.down")
+                    Label(AppText.saveRestaurant(appLanguage), systemImage: "square.and.arrow.down")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
-                .accessibilityHint("Saves this nearby restaurant to your local list.")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -248,7 +243,6 @@ struct ResultView: View {
                 .frame(height: 240)
                 .clipped()
                 .clipShape(RoundedRectangle(cornerRadius: 18))
-                .accessibilityHidden(true)
         } else {
             RoundedRectangle(cornerRadius: 18)
                 .fill(.tertiary)
@@ -258,11 +252,10 @@ struct ResultView: View {
                         Image(systemName: "photo")
                             .font(.largeTitle)
                             .foregroundStyle(.secondary)
-                        Text("No photo")
+                        Text(AppText.noPhoto(appLanguage))
                             .foregroundStyle(.secondary)
                     }
                 )
-                .accessibilityHidden(true)
         }
     }
 
@@ -300,7 +293,7 @@ struct ResultView: View {
     private func importToLocal() {
         if alreadyExistsInLocal() {
             wasImported = true
-            importMessage = "This restaurant is already in your local list."
+            importMessage = AppText.alreadyInLocal(appLanguage)
             return
         }
 
@@ -320,6 +313,6 @@ struct ResultView: View {
 
         modelContext.insert(restaurant)
         wasImported = true
-        importMessage = "Restaurant saved to your local list."
+        importMessage = AppText.savedToLocal(appLanguage)
     }
 }

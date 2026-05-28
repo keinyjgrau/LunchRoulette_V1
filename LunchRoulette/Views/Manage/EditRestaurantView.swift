@@ -5,11 +5,12 @@
 //  Created by Keiny.Grau.a1 on 2026-03-16.
 //
 
-
 import SwiftUI
 import PhotosUI
 
 struct EditRestaurantView: View {
+    @AppStorage("appLanguage") private var appLanguage = AppLanguageOption.system.rawValue
+
     @Environment(\.dismiss) private var dismiss
 
     @AppStorage(FoodTypeCatalog.storageKey) private var foodTypeOptionsRawValue: String = FoodTypeCatalog.encode(FoodTypeCatalog.defaultTypes)
@@ -34,15 +35,15 @@ struct EditRestaurantView: View {
 
     var body: some View {
         Form {
-            Section("Required") {
-                TextField("Name", text: $restaurant.name)
+            Section(AppText.required(appLanguage)) {
+                TextField(AppText.name(appLanguage), text: $restaurant.name)
             }
 
-            Section("Photo") {
+            Section(AppText.photo(appLanguage)) {
                 PhotosPicker(selection: $photoItem, matching: .images) {
                     HStack {
                         Image(systemName: "photo.on.rectangle")
-                        Text("Change Photo")
+                        Text(AppText.changePhoto(appLanguage))
                     }
                 }
 
@@ -60,43 +61,43 @@ struct EditRestaurantView: View {
                         restaurant.photoData = nil
                         tempPhotoData = nil
                     } label: {
-                        Label("Remove Photo", systemImage: "trash")
+                        Label(AppText.removePhoto(appLanguage), systemImage: "trash")
                     }
                 } else {
-                    Text("No photo")
+                    Text(AppText.noPhoto(appLanguage))
                         .foregroundStyle(.secondary)
                 }
             }
 
-            Section("Details") {
-                Picker("Type of food", selection: $selectedFoodType) {
-                    Text("None").tag("")
+            Section(AppText.details(appLanguage)) {
+                Picker(AppText.typeOfFood(appLanguage), selection: $selectedFoodType) {
+                    Text(AppText.none(appLanguage)).tag("")
                     ForEach(foodTypeOptions, id: \.self) { type in
                         Text(type).tag(type)
                     }
                 }
 
-                TextField("Average cost", text: $avgCostText)
-                TextField("Address", text: $addressText)
+                TextField(AppText.averageCost(appLanguage), text: $avgCostText)
+                TextField(AppText.address(appLanguage), text: $addressText)
 
-                TextField("Rating (0–5)", text: $ratingText)
+                TextField(AppText.ratingLabel(appLanguage), text: $ratingText)
                     .keyboardType(.decimalPad)
 
-                TextField("Frequency", text: $frequencyText)
+                TextField(AppText.frequency(appLanguage), text: $frequencyText)
                     .keyboardType(.numberPad)
 
-                TextField("Distance miles", text: $distanceText)
+                TextField(AppText.distanceMiles(appLanguage), text: $distanceText)
                     .keyboardType(.decimalPad)
 
                 TextEditor(text: $detailsTextValue)
                     .frame(minHeight: 90)
             }
         }
-        .navigationTitle("Edit Restaurant")
+        .navigationTitle(AppText.editRestaurant(appLanguage))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                Button("Done") {
+                Button(AppText.done(appLanguage)) {
                     applyChanges()
                     dismiss()
                 }

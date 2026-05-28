@@ -11,6 +11,8 @@ import SwiftData
 import PhotosUI
 
 struct AddRestaurantView: View {
+    @AppStorage("appLanguage") private var appLanguage = AppLanguageOption.system.rawValue
+
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
 
@@ -34,15 +36,15 @@ struct AddRestaurantView: View {
 
     var body: some View {
         Form {
-            Section("Required") {
-                TextField("Name", text: $name)
+            Section(AppText.required(appLanguage)) {
+                TextField(AppText.name(appLanguage), text: $name)
             }
 
-            Section("Photo") {
+            Section(AppText.photo(appLanguage)) {
                 PhotosPicker(selection: $photoItem, matching: .images) {
                     HStack {
                         Image(systemName: "photo.on.rectangle")
-                        Text("Choose Photo")
+                        Text(AppText.choosePhoto(appLanguage))
                     }
                 }
 
@@ -58,50 +60,50 @@ struct AddRestaurantView: View {
                     Button(role: .destructive) {
                         self.photoData = nil
                     } label: {
-                        Label("Remove Photo", systemImage: "trash")
+                        Label(AppText.removePhoto(appLanguage), systemImage: "trash")
                     }
                 } else {
-                    Text("No photo")
+                    Text(AppText.noPhoto(appLanguage))
                         .foregroundStyle(.secondary)
                 }
             }
 
-            Section("Details") {
-                Picker("Type of food", selection: $selectedFoodType) {
-                    Text("None").tag("")
+            Section(AppText.details(appLanguage)) {
+                Picker(AppText.typeOfFood(appLanguage), selection: $selectedFoodType) {
+                    Text(AppText.none(appLanguage)).tag("")
                     ForEach(foodTypeOptions, id: \.self) { type in
                         Text(type).tag(type)
                     }
                 }
 
-                TextField("Average cost", text: $avgCost)
-                TextField("Address", text: $address)
+                TextField(AppText.averageCost(appLanguage), text: $avgCost)
+                TextField(AppText.address(appLanguage), text: $address)
 
-                TextField("Rating (0–5)", text: $ratingText)
+                TextField(AppText.ratingLabel(appLanguage), text: $ratingText)
                     .keyboardType(.decimalPad)
 
-                TextField("Frequency", text: $frequencyText)
+                TextField(AppText.frequency(appLanguage), text: $frequencyText)
                     .keyboardType(.numberPad)
 
-                TextField("Distance miles", text: $distanceText)
+                TextField(AppText.distanceMiles(appLanguage), text: $distanceText)
                     .keyboardType(.decimalPad)
 
                 TextEditor(text: $detailsText)
                     .frame(minHeight: 90)
             }
         }
-        .navigationTitle("Add Restaurant")
+        .navigationTitle(AppText.addRestaurant(appLanguage))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                Button("Save") {
+                Button(AppText.save(appLanguage)) {
                     saveRestaurant()
                 }
                 .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
 
             ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") {
+                Button(AppText.cancel(appLanguage)) {
                     dismiss()
                 }
             }

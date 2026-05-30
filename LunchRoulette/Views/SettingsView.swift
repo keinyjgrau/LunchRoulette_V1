@@ -5,6 +5,7 @@
 //  Created by Keiny.Grau.a1 on 2026-03-20.
 //
 
+
 import SwiftUI
 
 struct SettingsView: View {
@@ -13,6 +14,7 @@ struct SettingsView: View {
     @AppStorage("defaultSourceMode") private var defaultSourceModeRawValue: String = RestaurantSourceMode.local.rawValue
     @AppStorage(FoodTypeCatalog.storageKey) private var foodTypeOptionsRawValue: String = FoodTypeCatalog.encode(FoodTypeCatalog.defaultTypes)
 
+    @StateObject private var accountBindingManager = AccountBindingManager()
     @State private var newFoodType = ""
 
     private var selectedSourceModeBinding: Binding<RestaurantSourceMode> {
@@ -77,6 +79,59 @@ struct SettingsView: View {
                         .padding(.vertical, 4)
                     }
 
+                    Section(AppText.isSpanish(appLanguage) ? "Vincular Cuenta" : "Bind Account") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack {
+                                Text("Game Center")
+                                Spacer()
+                                if accountBindingManager.isGameCenterAuthenticated {
+                                    Text(AppText.saved(appLanguage))
+                                        .font(.caption)
+                                        .fontWeight(.semibold)
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 4)
+                                        .background(Capsule().fill(Color.green.opacity(0.15)))
+                                        .foregroundStyle(.green)
+                                }
+                            }
+
+                            if let gameCenterDisplayName = accountBindingManager.gameCenterDisplayName,
+                               !gameCenterDisplayName.isEmpty {
+                                Text(gameCenterDisplayName)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            Button {
+                                accountBindingManager.bindGameCenter()
+                            } label: {
+                                Label(
+                                    accountBindingManager.isGameCenterAuthenticated
+                                    ? (AppText.isSpanish(appLanguage) ? "Verificar Game Center" : "Check Game Center")
+                                    : (AppText.isSpanish(appLanguage) ? "Vincular con Game Center" : "Bind with Game Center"),
+                                    systemImage: "gamecontroller"
+                                )
+                            }
+                            .disabled(accountBindingManager.isBusy)
+
+                            Button {
+                                accountBindingManager.facebookPlaceholder()
+                            } label: {
+                                Label(
+                                    AppText.isSpanish(appLanguage) ? "Vincular con Facebook (próximamente)" : "Bind with Facebook (coming soon)",
+                                    systemImage: "person.crop.circle.badge.plus"
+                                )
+                            }
+
+                            if let bindMessage = accountBindingManager.bindMessage, !bindMessage.isEmpty {
+                                Text(bindMessage)
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+
                     Section(AppText.foodTypes(appLanguage)) {
                         HStack {
                             TextField(AppText.addNewFoodType(appLanguage), text: $newFoodType)
@@ -105,6 +160,9 @@ struct SettingsView: View {
                 .background(Color.clear)
             }
             .navigationTitle(AppText.settings(appLanguage))
+            .onAppear {
+                accountBindingManager.refreshState()
+            }
         }
     }
 

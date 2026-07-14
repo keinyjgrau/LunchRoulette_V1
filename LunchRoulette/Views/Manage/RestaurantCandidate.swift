@@ -49,7 +49,7 @@ struct RestaurantCandidate: Identifiable, Hashable {
         self.source = source
         self.name = name
         self.detailsText = detailsText
-        self.foodType = foodType
+        self.foodType = FoodTypeFormatter.clean(foodType)
         self.avgCost = avgCost
         self.address = address
         self.rating = rating
@@ -82,7 +82,7 @@ extension RestaurantCandidate {
             winningNumber: nil
         )
     }
-    
+
     func withWinningNumber(_ number: Int?) -> RestaurantCandidate {
         RestaurantCandidate(
             id: id,
@@ -101,11 +101,10 @@ extension RestaurantCandidate {
             winningNumber: number
         )
     }
-}
-    extension RestaurantCandidate {
-        var repeatKey: String {
-            let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            let normalizedAddress = address?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
-            return "\(normalizedName)|\(normalizedAddress)"
-        }
+
+    var repeatKey: String {
+        let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let normalizedAddress = address?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        return "\(normalizedName)|\(normalizedAddress)"
     }
+}

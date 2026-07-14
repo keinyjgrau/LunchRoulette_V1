@@ -5,6 +5,7 @@
 //  Created by Keiny.Grau.a1 on 2026-03-17.
 //
 
+
 import Foundation
 import MapKit
 import CoreLocation
@@ -53,6 +54,7 @@ struct NearbyRestaurantService {
         }
 
         var seen = Set<String>()
+
         let uniqueSorted = candidates
             .sorted {
                 ($0.distanceMiles ?? .greatestFiniteMagnitude) < ($1.distanceMiles ?? .greatestFiniteMagnitude)
@@ -95,11 +97,14 @@ struct NearbyRestaurantService {
     }
 
     private func categoryText(from item: MKMapItem) -> String? {
-        if let raw = item.pointOfInterestCategory?.rawValue {
-            return raw
-                .replacingOccurrences(of: "_", with: " ")
-                .capitalized
+        guard let category = item.pointOfInterestCategory else {
+            return nil
         }
-        return nil
+
+        if category == .restaurant {
+            return nil
+        }
+
+        return FoodTypeFormatter.clean(category.rawValue)
     }
 }

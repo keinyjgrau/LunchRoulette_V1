@@ -10,477 +10,240 @@ import SwiftUI
 import SwiftData
 import CoreLocation
 
-enum RestaurantSourceMode: String, CaseIterable, Identifiable {
-    case local = "Local"
-    case nearby = "Nearby"
-
-    var id: String { rawValue }
-}
-
 struct PickView: View {
     @AppStorage("appLanguage") private var appLanguage = AppLanguageOption.system.rawValue
+    @AppStorage("rouletteSpinDuration") private var rouletteSpinDuration = 2.8
 
-    @Query(sort: \Restaurant.createdAt, order: .reverse) private var allRestaurants: [Restaurant]
+    @Environment(\.modelContext) private var modelContext
 
-    @StateObject private var locationManager = AppLocationManager()
+    @Query(sort: \Restaurant.createdAt, order: .reverse)
+    private var allRestaurants: [Restaurant]
 
-    @AppStorage("defaultSourceMode") private var defaultSourceModeRawValue: String = RestaurantSourceMode.local.rawValue
-    @AppStorage("rouletteSpinDuration") private var rouletteSpinDuration: Double = 2.8
+    @State private var locationProvider = PickLocationProvider()
 
-    @State private var rawLocalChoices: [RestaurantCandidate] = []
+    @State private var selectedSource: RestaurantCandidateSource = .local
+
     @State private var rawNearbyChoices: [RestaurantCandidate] = []
-    @State private var availableChoices: [RestaurantCandidate] = []
-
-    @State private var selectedCandidate: RestaurantCandidate? = nil
-    @State private var showResult = false
-    @State private var showRoulette = false
-    @State private var lastWinnerRepeatKey: String? = nil
-
-    @State private var selectedSourceMode: RestaurantSourceMode = .local
-
-    @State private var isLoadingNearby = false
-    @State private var nearbyErrorMessage: String? = nil
-    @State private var pendingNearbySearchAfterPermission = false
-    @State private var nearbyStatusMessage: String? = nil
+    @State private var isSearchingNearby = false
+    @State private var nearbyError: String?
 
     @State private var selectedIDs: Set<UUID> = []
     @State private var selectedOrder: [UUID] = []
-    @State private var selectionLimitMessage: String? = nil
 
-    @State private var isDistanceFilterOn = false
-    @State private var isCategoryFilterOn = false
-    @State private var isRatingFilterOn = false
+    @State private var useDistanceFilter = false
+    @State private var nearbyDistanceLimit = 10.0
 
-    @State private var nearbyDistanceLimit: Double = 25
-    @State private var selectedCategory: String = "Any"
-    @State private var minimumRating: Double = 0
+    @State private var useCategoryFilter = false
+    @State private var selectedCategory = "Any"
+
+    @State private var useRatingFilter = false
+    @State private var selectedMinimumRating = 0.0
+
+    @State private var showSelectionLimitAlert = false
+    @State private var saveMessage: String?
+
+    @State private var showRoulette = false
+    @State private var rouletteChoices: [RestaurantCandidate] = []
+    @State private var pendingWinner: RestaurantCandidate?
+    @State private var resultCandidate: RestaurantCandidate?
+    @State private var lastWinnerRepeatKey: String?
 
     private let maxSelections = 10
-    private let nearbyService = NearbyRestaurantService()
-
-    private var selectedChoices: [RestaurantCandidate] {
-        let lookup = Dictionary(uniqueKeysWithValues: availableChoices.map { ($0.id, $0) })
-        return selectedOrder.compactMap { lookup[$0] }
-    }
-
-    private var currentRawChoices: [RestaurantCandidate] {
-        selectedSourceMode == .local ? rawLocalChoices : rawNearbyChoices
-    }
-
-    private var categoryOptions: [String] {
-        let categories: [String] = currentRawChoices.compactMap { candidate in
-            guard let value = candidate.foodType?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !value.isEmpty else {
-                return nil
-            }
-            return value
-        }
-
-        return [AppText.any(appLanguage)] + Array(Set(categories)).sorted()
-    }
-
-    private var anyFilterOn: Bool {
-        isDistanceFilterOn || isCategoryFilterOn || isRatingFilterOn
-    }
+    private let minSelections = 2
 
     var body: some View {
         NavigationStack {
             ZStack {
                 AppBackground()
 
-                Group {
-                    if selectedSourceMode == .local {
-                        if allRestaurants.isEmpty {
-                            emptyState
-                        } else {
-                            content
+                ScrollView {
+                    VStack(spacing: 16) {
+                        sourcePickerSection
+
+                        if selectedSource == .nearby {
+                            nearbySearchSection
+                            nearbyFiltersSection
                         }
-                    } else {
-                        nearbyContent
+
+                        selectedRestaurantsSection
+                        restaurantSelectionSection
+                        spinButtonSection
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 14)
+                    .padding(.bottom, 26)
+                }
+            }
+            .navigationTitle(t("Choose Lunch", "Elegir almuerzo"))
+            .navigationBarTitleDisplayMode(.inline)
+            .task {
+                if selectedSource == .nearby && rawNearbyChoices.isEmpty {
+                    await searchNearbyRestaurants(force: false)
+                }
+            }
+            .onChange(of: selectedSource) { _, newValue in
+                clearSelection()
+
+                if newValue == .nearby && rawNearbyChoices.isEmpty {
+                    Task {
+                        await searchNearbyRestaurants(force: false)
                     }
                 }
             }
-            .navigationTitle(AppText.chooseLunchTitle(appLanguage))
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    if selectedSourceMode == .local {
-                        Button(AppText.refresh(appLanguage)) {
-                            loadLocalChoices()
-                        }
-                    } else {
-                        Button(AppText.search(appLanguage)) {
-                            Task { await loadNearbyChoices() }
-                        }
+            .onChange(of: useDistanceFilter) { _, _ in pruneSelectionToAvailable() }
+            .onChange(of: nearbyDistanceLimit) { _, _ in pruneSelectionToAvailable() }
+            .onChange(of: useCategoryFilter) { _, _ in pruneSelectionToAvailable() }
+            .onChange(of: selectedCategory) { _, _ in pruneSelectionToAvailable() }
+            .onChange(of: useRatingFilter) { _, _ in pruneSelectionToAvailable() }
+            .onChange(of: selectedMinimumRating) { _, _ in pruneSelectionToAvailable() }
+            .alert(t("Selection limit", "Límite de selección"), isPresented: $showSelectionLimitAlert) {
+                Button(t("OK", "OK"), role: .cancel) { }
+            } message: {
+                Text(t("You can select up to 10 restaurants.", "Puedes seleccionar hasta 10 restaurantes."))
+            }
+            .alert(t("Save restaurant", "Guardar restaurante"), isPresented: Binding(
+                get: { saveMessage != nil },
+                set: { newValue in
+                    if !newValue {
+                        saveMessage = nil
                     }
                 }
-            }
-            .onAppear {
-                let savedMode = RestaurantSourceMode(rawValue: defaultSourceModeRawValue) ?? .local
-                if selectedSourceMode != savedMode {
-                    selectedSourceMode = savedMode
+            )) {
+                Button(t("OK", "OK"), role: .cancel) {
+                    saveMessage = nil
                 }
-
-                if savedMode == .local {
-                    loadLocalChoices()
-                } else {
-                    rawLocalChoices = []
-                    rawNearbyChoices = []
-                    availableChoices = []
-                    selectedIDs = []
-                    selectedOrder = []
-                    nearbyErrorMessage = nil
-                    nearbyStatusMessage = nil
-                }
+            } message: {
+                Text(saveMessage ?? "")
             }
-            .onChange(of: selectedSourceMode) { _, newMode in
-                selectedIDs = []
-                selectedOrder = []
-                selectedCategory = AppText.any(appLanguage)
-                minimumRating = 0
-
-                switch newMode {
-                case .local:
-                    pendingNearbySearchAfterPermission = false
-                    nearbyStatusMessage = nil
-                    nearbyErrorMessage = nil
-                    loadLocalChoices()
-
-                case .nearby:
-                    rawNearbyChoices = []
-                    availableChoices = []
-                    nearbyErrorMessage = nil
-                    nearbyStatusMessage = nil
-                    applyActiveFilters()
+            .sheet(isPresented: $showRoulette, onDismiss: {
+                if let pendingWinner {
+                    resultCandidate = pendingWinner
+                    self.pendingWinner = nil
                 }
-            }
-            .onChange(of: appLanguage) { _, _ in
-                if selectedCategory == "Any" || selectedCategory == "Cualquiera" {
-                    selectedCategory = AppText.any(appLanguage)
-                }
-            }
-            .onChange(of: locationManager.authorizationStatus) { _, newStatus in
-                guard selectedSourceMode == .nearby else { return }
-                guard pendingNearbySearchAfterPermission else { return }
-
-                switch newStatus {
-                case .authorizedWhenInUse, .authorizedAlways:
-                    pendingNearbySearchAfterPermission = false
-                    nearbyStatusMessage = AppText.permissionGranted(appLanguage)
-                    Task { await loadNearbyChoices() }
-
-                case .denied, .restricted:
-                    pendingNearbySearchAfterPermission = false
-                    nearbyStatusMessage = nil
-                    nearbyErrorMessage = AppText.locationDenied(appLanguage)
-
-                case .notDetermined:
-                    nearbyStatusMessage = AppText.waitingPermission(appLanguage)
-
-                @unknown default:
-                    pendingNearbySearchAfterPermission = false
-                    nearbyStatusMessage = nil
-                    nearbyErrorMessage = AppText.locationDenied(appLanguage)
-                }
-            }
-            .onChange(of: isDistanceFilterOn) { _, _ in applyActiveFilters() }
-            .onChange(of: isCategoryFilterOn) { _, _ in applyActiveFilters() }
-            .onChange(of: isRatingFilterOn) { _, _ in applyActiveFilters() }
-            .onChange(of: nearbyDistanceLimit) { _, _ in applyActiveFilters() }
-            .onChange(of: selectedCategory) { _, _ in applyActiveFilters() }
-            .onChange(of: minimumRating) { _, _ in applyActiveFilters() }
-            .navigationDestination(isPresented: $showResult) {
-                if let selectedCandidate {
-                    ResultView(candidate: selectedCandidate)
-                }
-            }
-            .sheet(isPresented: $showRoulette) {
+            }) {
                 RouletteView(
-                    choices: selectedChoices,
+                    choices: rouletteChoices,
                     spinDuration: rouletteSpinDuration,
                     lastWinnerRepeatKey: lastWinnerRepeatKey
                 ) { winner in
-                    selectedCandidate = winner
                     lastWinnerRepeatKey = winner.repeatKey
-                    showResult = true
+                    pendingWinner = winner
+                    showRoulette = false
                 }
+                .interactiveDismissDisabled(true)
             }
-            .alert(AppText.nearbySearchTitle(appLanguage), isPresented: Binding(
-                get: { nearbyErrorMessage != nil },
-                set: { newValue in
-                    if !newValue { nearbyErrorMessage = nil }
-                }
-            )) {
-                Button("OK", role: .cancel) { nearbyErrorMessage = nil }
-            } message: {
-                Text(nearbyErrorMessage ?? "")
-            }
-            .alert(AppText.selectionLimitTitle(appLanguage), isPresented: Binding(
-                get: { selectionLimitMessage != nil },
-                set: { newValue in
-                    if !newValue { selectionLimitMessage = nil }
-                }
-            )) {
-                Button("OK", role: .cancel) { selectionLimitMessage = nil }
-            } message: {
-                Text(selectionLimitMessage ?? "")
+            .navigationDestination(item: $resultCandidate) { candidate in
+                ResultView(candidate: candidate)
             }
         }
     }
 
-    private var emptyState: some View {
-        VStack(spacing: 14) {
-            sourcePickerCard
-            filtersCard
+    // MARK: - Main Sections
 
-            ContentUnavailableView(
-                AppText.noRestaurantsYet(appLanguage),
-                systemImage: "fork.knife.circle",
-                description: Text(AppText.noRestaurantsDesc(appLanguage))
-            )
-            .padding()
-
-            Spacer()
-        }
-        .padding(.top, 8)
-    }
-
-    private var content: some View {
-        ScrollView {
-            VStack(spacing: 12) {
-                sourcePickerCard
-                filtersCard
-                selectionSummaryCard
-                restaurantSelectionSection
-            }
-            .padding(.top, 8)
-            .padding(.bottom, 16)
-        }
-    }
-
-    private var nearbyContent: some View {
-        Group {
-            if isLoadingNearby {
-                ScrollView {
-                    VStack(spacing: 12) {
-                        sourcePickerCard
-                        filtersCard
-                        nearbyStatusCard
-
-                        VStack(spacing: 16) {
-                            Spacer(minLength: 20)
-                            ProgressView(AppText.working(appLanguage))
-                            Spacer(minLength: 20)
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                    .padding(.top, 8)
-                    .padding(.bottom, 16)
-                }
-            } else if availableChoices.isEmpty {
-                ScrollView {
-                    VStack(spacing: 14) {
-                        sourcePickerCard
-                        filtersCard
-
-                        if nearbyStatusMessage != nil {
-                            nearbyStatusCard
-                        }
-
-                        Spacer(minLength: 20)
-
-                        Image(systemName: "location.magnifyingglass")
-                            .font(.system(size: 42))
-                            .foregroundStyle(.orange)
-
-                        Text(AppText.findRestaurantsNearYou(appLanguage))
-                            .font(.title3)
-                            .fontWeight(.bold)
-
-                        Text(AppText.nearbyIntro(appLanguage))
-                            .multilineTextAlignment(.center)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal)
-
-                        Button {
-                            Task { await loadNearbyChoices() }
-                        } label: {
-                            Label(AppText.findNearbyRestaurants(appLanguage), systemImage: "location.fill")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .padding(.horizontal)
-
-                        Spacer(minLength: 20)
-                    }
-                    .padding(.top, 8)
-                    .padding(.bottom, 16)
-                }
-            } else {
-                ScrollView {
-                    VStack(spacing: 12) {
-                        sourcePickerCard
-                        filtersCard
-                        nearbyStatusCard
-                        selectionSummaryCard
-                        restaurantSelectionSection
-                    }
-                    .padding(.top, 8)
-                    .padding(.bottom, 16)
-                }
-            }
-        }
-    }
-
-    private var restaurantSelectionSection: some View {
+    private var sourcePickerSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text(AppText.availableChoices(availableChoices.count, appLanguage))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-
-                Spacer()
-            }
-            .padding(.horizontal)
-
-            VStack(spacing: 0) {
-                HStack {
-                    Text(AppText.selectUpToTen(appLanguage))
-                        .font(.headline)
-                    Spacer()
-                }
-                .padding(.horizontal, 14)
-                .padding(.top, 14)
-                .padding(.bottom, 8)
-
-                LazyVStack(spacing: 0) {
-                    ForEach(Array(availableChoices.enumerated()), id: \.element.id) { index, candidate in
-                        Button {
-                            toggleSelection(for: candidate)
-                        } label: {
-                            RestaurantRow(
-                                candidate: candidate,
-                                isSavedLocally: isCandidateSavedLocally(candidate),
-                                isSelected: selectedIDs.contains(candidate.id),
-                                selectionMode: true,
-                                isSelectionDisabled: selectedIDs.count >= maxSelections && !selectedIDs.contains(candidate.id)
-                            )
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 10)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-
-                        if index < availableChoices.count - 1 {
-                            Divider()
-                                .padding(.leading, 70)
-                                .padding(.trailing, 14)
-                        }
-                    }
-                }
-
-                Divider()
-                    .padding(.top, 2)
-
-                Button {
-                    showRoulette = true
-                } label: {
-                    HStack {
-                        Spacer()
-                        Image(systemName: "shuffle")
-                        Text(AppText.chooseForMe(appLanguage))
-                            .fontWeight(.semibold)
-                        Spacer()
-                    }
-                    .padding(.vertical, 12)
-                }
-                .buttonStyle(.plain)
-                .disabled(selectedChoices.count < 2)
-                .opacity(selectedChoices.count < 2 ? 0.45 : 1.0)
-                .padding(.horizontal, 14)
-                .padding(.bottom, 10)
-            }
-            .background(
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(.thinMaterial)
-            )
-            .padding(.horizontal)
-        }
-    }
-
-    private var sourcePickerCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(AppText.restaurantSource(appLanguage))
+            Text(t("Restaurant source", "Fuente de restaurantes"))
                 .font(.headline)
 
-            Picker(AppText.restaurantSource(appLanguage), selection: $selectedSourceMode) {
-                ForEach(RestaurantSourceMode.allCases) { mode in
-                    Text(mode.rawValue == "Local" ? AppText.local(appLanguage) : AppText.nearby(appLanguage)).tag(mode)
-                }
+            Picker(t("Restaurant source", "Fuente de restaurantes"), selection: $selectedSource) {
+                Text(t("Local", "Local"))
+                    .tag(RestaurantCandidateSource.local)
+
+                Text(t("Nearby", "Cercanos"))
+                    .tag(RestaurantCandidateSource.nearby)
             }
             .pickerStyle(.segmented)
         }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(.thinMaterial)
-        )
-        .padding(.horizontal)
+        .padding(16)
+        .cardBackground()
     }
 
-    private var filtersCard: some View {
+    private var nearbySearchSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(t("Nearby restaurants", "Restaurantes cercanos"))
+                        .font(.headline)
+
+                    Text(t(
+                        "Search Apple Maps for restaurants near you.",
+                        "Busca restaurantes cerca de ti usando Apple Maps."
+                    ))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Button {
+                    Task {
+                        await searchNearbyRestaurants(force: true)
+                    }
+                } label: {
+                    if isSearchingNearby {
+                        ProgressView()
+                            .frame(width: 34, height: 34)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.headline)
+                            .frame(width: 34, height: 34)
+                    }
+                }
+                .buttonStyle(.bordered)
+                .disabled(isSearchingNearby)
+            }
+
+            if let nearbyError {
+                Text(nearbyError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+
+            if !rawNearbyChoices.isEmpty {
+                Text(t(
+                    "\(rawNearbyChoices.count) nearby restaurants found",
+                    "\(rawNearbyChoices.count) restaurantes cercanos encontrados"
+                ))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+        }
+        .padding(16)
+        .cardBackground()
+    }
+
+    private var nearbyFiltersSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(AppText.filters(appLanguage))
+            Text(t("Filters", "Filtros"))
                 .font(.headline)
 
-            if selectedSourceMode == .nearby {
-                VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle(t("Distance", "Distancia"), isOn: $useDistanceFilter)
+
+                if useDistanceFilter {
                     HStack {
-                        Text(AppText.distance(appLanguage))
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
+                        Text(t("Within", "Hasta"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
 
                         Spacer()
 
-                        Toggle("", isOn: $isDistanceFilterOn)
-                            .labelsHidden()
+                        Text("\(Int(nearbyDistanceLimit)) mi")
+                            .font(.caption)
+                            .fontWeight(.semibold)
                     }
 
-                    if isDistanceFilterOn {
-                        HStack {
-                            Text("\(Int(nearbyDistanceLimit)) mi")
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                        }
-
-                        Slider(value: $nearbyDistanceLimit, in: 1...100, step: 1)
-
-                        HStack {
-                            Text("1 mi")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            Text("100 mi")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
+                    Slider(value: $nearbyDistanceLimit, in: 1...100, step: 1)
                 }
             }
 
+            Divider()
+
             VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text(AppText.category(appLanguage))
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
+                Toggle(t("Category", "Categoría"), isOn: $useCategoryFilter)
 
-                    Spacer()
-
-                    Toggle("", isOn: $isCategoryFilterOn)
-                        .labelsHidden()
-                }
-
-                if isCategoryFilterOn {
-                    Picker(AppText.category(appLanguage), selection: $selectedCategory) {
+                if useCategoryFilter {
+                    Picker(t("Category", "Categoría"), selection: $selectedCategory) {
                         ForEach(categoryOptions, id: \.self) { category in
                             Text(category).tag(category)
                         }
@@ -489,284 +252,319 @@ struct PickView: View {
                 }
             }
 
+            Divider()
+
             VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text(AppText.minimumRating(appLanguage))
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
+                Toggle(t("Rating", "Calificación"), isOn: $useRatingFilter)
 
-                    Spacer()
-
-                    Toggle("", isOn: $isRatingFilterOn)
-                        .labelsHidden()
-                }
-
-                if isRatingFilterOn {
-                    Picker(AppText.minimumRating(appLanguage), selection: $minimumRating) {
-                        Text(AppText.any(appLanguage)).tag(0.0)
+                if useRatingFilter {
+                    Picker(t("Minimum rating", "Calificación mínima"), selection: $selectedMinimumRating) {
+                        Text(t("Any", "Cualquiera")).tag(0.0)
                         Text("3.0+").tag(3.0)
                         Text("4.0+").tag(4.0)
                         Text("4.5+").tag(4.5)
                     }
                     .pickerStyle(.segmented)
+
+                    Text(t(
+                        "Ratings appear only when Apple Maps provides them.",
+                        "Las calificaciones aparecen solo cuando Apple Maps las provee."
+                    ))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
                 }
             }
-
-            if !anyFilterOn {
-                Text(AppText.turnOnFilters(appLanguage))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
         }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(.thinMaterial)
-        )
-        .padding(.horizontal)
+        .padding(16)
+        .cardBackground()
     }
 
-    private var selectionSummaryCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
+    private var selectedRestaurantsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text(AppText.selectedForRoulette(appLanguage))
+                Text(t("Selected", "Seleccionados"))
                     .font(.headline)
 
                 Spacer()
 
-                Text("\(selectedChoices.count) / \(maxSelections)")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-
-                Text(AppText.selectedCountLabel(selectedChoices.count, appLanguage))
+                Text("\(selectedChoices.count)/\(maxSelections)")
                     .font(.caption)
                     .fontWeight(.semibold)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(
-                        Capsule()
-                            .fill(selectedChoices.count == maxSelections
-                                  ? Color.orange.opacity(0.18)
-                                  : Color.secondary.opacity(0.12))
-                    )
-                    .foregroundStyle(selectedChoices.count == maxSelections ? .orange : .primary)
+                    .foregroundStyle(selectedChoices.count >= maxSelections ? .orange : .secondary)
             }
 
-            Text(selectedChoices.count < 2
-                 ? AppText.needAtLeastTwo(appLanguage)
-                 : AppText.selectedWillBeUsed(appLanguage))
-                .font(.subheadline)
+            if selectedChoices.isEmpty {
+                Text(t(
+                    "Select at least 2 restaurants to spin.",
+                    "Selecciona al menos 2 restaurantes para girar."
+                ))
+                .font(.caption)
                 .foregroundStyle(.secondary)
-
-            if !selectedChoices.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(selectedChoices) { candidate in
-                            selectedChip(for: candidate)
-                        }
+            } else {
+                FlowLayout(spacing: 8) {
+                    ForEach(Array(selectedChoices.enumerated()), id: \.element.id) { index, candidate in
+                        selectedChip(index: index + 1, candidate: candidate)
                     }
-                    .padding(.vertical, 2)
                 }
             }
 
-            if selectedChoices.count == maxSelections {
-                HStack(spacing: 8) {
-                    Image(systemName: "exclamationmark.circle.fill")
-                        .foregroundStyle(.orange)
-
-                    Text(AppText.maximumSelected(appLanguage))
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.orange)
-                }
+            if selectedChoices.count >= maxSelections {
+                Text(t("Maximum selected", "Máximo seleccionado"))
+                    .font(.caption)
+                    .foregroundStyle(.orange)
             }
+        }
+        .padding(16)
+        .cardBackground()
+    }
 
-            HStack(spacing: 10) {
-                Button(AppText.clearSelection(appLanguage)) {
-                    selectedIDs.removeAll()
-                    selectedOrder.removeAll()
-                }
-                .disabled(selectedIDs.isEmpty)
+    private var restaurantSelectionSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text(selectedSource == .local ? t("Your restaurants", "Tus restaurantes") : t("Nearby list", "Lista cercana"))
+                    .font(.headline)
 
                 Spacer()
 
-                Button {
-                    showRoulette = true
-                } label: {
-                    Label(AppText.chooseForMe(appLanguage), systemImage: "shuffle")
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(selectedChoices.count < 2)
+                Text("\(availableChoices.count)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-        }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(.thinMaterial)
-        )
-        .padding(.horizontal)
-    }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 8)
 
-    private var nearbyStatusCard: some View {
-        Group {
-            if let nearbyStatusMessage, !nearbyStatusMessage.isEmpty {
-                HStack(spacing: 12) {
-                    ProgressView()
+            if availableChoices.isEmpty {
+                emptyStateView
+                    .padding(16)
+            } else {
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(availableChoices.enumerated()), id: \.element.id) { index, candidate in
+                        let isSaved = isCandidateSavedLocally(candidate)
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(AppText.searchingNearby(appLanguage))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        HStack(spacing: 8) {
+                            Button {
+                                toggleSelection(for: candidate)
+                            } label: {
+                                RestaurantRow(
+                                    candidate: candidate,
+                                    isSavedLocally: isSaved,
+                                    isSelected: selectedIDs.contains(candidate.id),
+                                    selectionMode: true,
+                                    isSelectionDisabled: selectedIDs.count >= maxSelections && !selectedIDs.contains(candidate.id)
+                                )
+                                .padding(.leading, 14)
+                                .padding(.vertical, 10)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .frame(maxWidth: .infinity, alignment: .leading)
 
-                        Text(nearbyStatusMessage)
-                            .font(.subheadline)
+                            if candidate.source == .nearby {
+                                saveNearbyButton(for: candidate, isSaved: isSaved)
+                                    .padding(.trailing, 14)
+                            }
+                        }
+
+                        if index < availableChoices.count - 1 {
+                            Divider()
+                                .padding(.leading, 70)
+                                .padding(.trailing, 14)
+                        }
                     }
-
-                    Spacer()
                 }
-                .padding()
-                .background(
-                    RoundedRectangle(cornerRadius: 18)
-                        .fill(.thinMaterial)
-                )
-                .padding(.horizontal)
             }
         }
+        .cardBackground()
     }
 
-    @ViewBuilder
-    private func selectedChip(for candidate: RestaurantCandidate) -> some View {
-        let orderIndex = (selectedOrder.firstIndex(of: candidate.id) ?? 0) + 1
+    private var spinButtonSection: some View {
+        Button {
+            startRoulette()
+        } label: {
+            HStack {
+                Image(systemName: "sparkles")
+                Text(t("Choose for me", "Escoge por mí"))
+                    .fontWeight(.semibold)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 15)
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(.orange)
+        .disabled(selectedChoices.count < minSelections)
+        .opacity(selectedChoices.count < minSelections ? 0.55 : 1)
+    }
 
-        HStack(spacing: 6) {
-            Text("\(orderIndex). \(candidate.name)")
+    private var emptyStateView: some View {
+        VStack(spacing: 10) {
+            Image(systemName: selectedSource == .local ? "fork.knife.circle" : "location.circle")
+                .font(.largeTitle)
+                .foregroundStyle(.secondary)
+
+            Text(emptyStateTitle)
+                .font(.headline)
+
+            Text(emptyStateSubtitle)
                 .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+
+            if selectedSource == .nearby {
+                Button {
+                    Task {
+                        await searchNearbyRestaurants(force: true)
+                    }
+                } label: {
+                    Text(t("Search nearby", "Buscar cercanos"))
+                }
+                .buttonStyle(.bordered)
+                .disabled(isSearchingNearby)
+                .padding(.top, 4)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 18)
+    }
+
+    // MARK: - Small Views
+
+    private func selectedChip(index: Int, candidate: RestaurantCandidate) -> some View {
+        HStack(spacing: 6) {
+            Text("\(index). \(candidate.name)")
+                .font(.caption)
+                .fontWeight(.semibold)
                 .lineLimit(1)
 
             Button {
-                selectedIDs.remove(candidate.id)
-                selectedOrder.removeAll { $0 == candidate.id }
+                removeSelection(for: candidate)
             } label: {
                 Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(.secondary)
+                    .font(.caption)
             }
             .buttonStyle(.plain)
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.vertical, 7)
         .background(
             Capsule()
-                .fill(Color.white.opacity(0.16))
+                .fill(Color.orange.opacity(0.15))
+        )
+        .overlay(
+            Capsule()
+                .stroke(Color.orange.opacity(0.35), lineWidth: 1)
         )
     }
 
-    @MainActor
-    private func loadLocalChoices() {
-        rawLocalChoices = allRestaurants.map { RestaurantCandidate(from: $0) }
-        rawNearbyChoices = []
-        selectedIDs.removeAll()
-        selectedOrder.removeAll()
-        applyActiveFilters()
+    @ViewBuilder
+    private func saveNearbyButton(for candidate: RestaurantCandidate, isSaved: Bool) -> some View {
+        Button {
+            saveCandidateToLocal(candidate)
+        } label: {
+            Image(systemName: isSaved ? "checkmark.circle.fill" : "plus.circle.fill")
+                .font(.title3)
+                .foregroundStyle(isSaved ? .green : .orange)
+                .frame(width: 38, height: 38)
+                .background(
+                    Circle()
+                        .fill(Color(.secondarySystemBackground))
+                )
+        }
+        .buttonStyle(.plain)
+        .disabled(isSaved)
+        .accessibilityLabel(isSaved ? t("Saved", "Guardado") : t("Save restaurant", "Guardar restaurante"))
     }
 
-    private func loadNearbyChoices() async {
-        isLoadingNearby = true
-        nearbyErrorMessage = nil
-        nearbyStatusMessage = AppText.preparingNearbySearch(appLanguage)
-        availableChoices = []
-        rawNearbyChoices = []
-        selectedIDs = []
-        selectedOrder = []
+    // MARK: - Data
 
-        defer { isLoadingNearby = false }
-
-        do {
-            nearbyStatusMessage = AppText.gettingCurrentLocation(appLanguage)
-            let location = try await locationManager.requestCurrentLocation()
-
-            nearbyStatusMessage = AppText.searchingNearbyRestaurants(appLanguage)
-            let results = try await nearbyService.searchNearbyRestaurants(from: location, limit: 50)
-
-            rawNearbyChoices = results
-            applyActiveFilters()
-
-            if availableChoices.isEmpty {
-                nearbyStatusMessage = nil
-                nearbyErrorMessage = anyFilterOn
-                    ? AppText.noNearbyMatchedFilters(appLanguage)
-                    : AppText.noNearbyFound(appLanguage)
-            } else {
-                nearbyStatusMessage = AppText.foundNearbyCount(availableChoices.count, appLanguage)
-            }
-        } catch let error as LocationError {
-            switch error {
-            case .waitingForPermission:
-                pendingNearbySearchAfterPermission = true
-                nearbyStatusMessage = AppText.requestLocationPermission(appLanguage)
-                locationManager.requestPermissionIfNeeded()
-
-            case .permissionDenied, .locationUnavailable, .unknown:
-                pendingNearbySearchAfterPermission = false
-                nearbyStatusMessage = nil
-                nearbyErrorMessage = error.localizedDescription
-            }
-        } catch {
-            pendingNearbySearchAfterPermission = false
-            nearbyStatusMessage = nil
-            nearbyErrorMessage = error.localizedDescription
+    private var rawLocalChoices: [RestaurantCandidate] {
+        allRestaurants.map { restaurant in
+            RestaurantCandidate(
+                id: restaurant.uuid,
+                source: .local,
+                name: restaurant.name,
+                detailsText: restaurant.detailsText,
+                foodType: FoodTypeFormatter.clean(restaurant.foodType),
+                avgCost: restaurant.avgCost,
+                address: restaurant.address,
+                rating: restaurant.rating,
+                frequency: restaurant.frequency,
+                distanceMiles: restaurant.distanceMiles,
+                latitude: restaurant.latitude,
+                longitude: restaurant.longitude,
+                photoData: restaurant.photoData,
+                winningNumber: nil
+            )
         }
     }
 
-    private func applyActiveFilters() {
-        let base = currentRawChoices
+    private var availableChoices: [RestaurantCandidate] {
+        switch selectedSource {
+        case .local:
+            return rawLocalChoices
 
-        let filtered = base.filter { candidate in
-            if selectedSourceMode == .nearby && isDistanceFilterOn {
-                guard let distance = candidate.distanceMiles, distance <= nearbyDistanceLimit else {
+        case .nearby:
+            return filteredNearbyChoices
+        }
+    }
+
+    private var filteredNearbyChoices: [RestaurantCandidate] {
+        rawNearbyChoices.filter { candidate in
+            if useDistanceFilter {
+                guard let distance = candidate.distanceMiles else {
+                    return false
+                }
+
+                if distance > nearbyDistanceLimit {
                     return false
                 }
             }
 
-            if isCategoryFilterOn && selectedCategory != AppText.any(appLanguage) {
-                guard let category = candidate.foodType, category == selectedCategory else {
+            if useCategoryFilter && selectedCategory != "Any" {
+                guard let foodType = FoodTypeFormatter.clean(candidate.foodType),
+                      foodType == selectedCategory else {
                     return false
                 }
             }
 
-            if isRatingFilterOn && minimumRating > 0 {
-                guard let rating = candidate.rating, rating >= minimumRating else {
+            if useRatingFilter && selectedMinimumRating > 0 {
+                guard let rating = candidate.rating else {
+                    return false
+                }
+
+                if rating < selectedMinimumRating {
                     return false
                 }
             }
 
             return true
         }
+    }
 
-        availableChoices = filtered
-        syncSelectionOrder()
-
-        if selectedSourceMode == .nearby, !isLoadingNearby, !rawNearbyChoices.isEmpty {
-            if availableChoices.isEmpty {
-                nearbyStatusMessage = nil
-                nearbyErrorMessage = anyFilterOn
-                    ? AppText.noNearbyMatchedFilters(appLanguage)
-                    : AppText.noNearbyFound(appLanguage)
-            } else {
-                nearbyErrorMessage = nil
-                nearbyStatusMessage = AppText.foundNearbyCount(availableChoices.count, appLanguage)
-            }
+    private var selectedChoices: [RestaurantCandidate] {
+        selectedOrder.compactMap { id in
+            availableChoices.first { $0.id == id }
         }
     }
 
+    private var categoryOptions: [String] {
+        let categories: [String] = rawNearbyChoices
+            .compactMap { FoodTypeFormatter.clean($0.foodType) }
+            .filter { !$0.isEmpty }
+
+        return ["Any"] + Array(Set(categories)).sorted()
+    }
+
+    // MARK: - Actions
+
     private func toggleSelection(for candidate: RestaurantCandidate) {
         if selectedIDs.contains(candidate.id) {
-            selectedIDs.remove(candidate.id)
-            selectedOrder.removeAll { $0 == candidate.id }
+            removeSelection(for: candidate)
             return
         }
 
         guard selectedIDs.count < maxSelections else {
-            selectionLimitMessage = AppText.selectionLimitMessage(appLanguage)
+            showSelectionLimitAlert = true
             return
         }
 
@@ -774,31 +572,335 @@ struct PickView: View {
         selectedOrder.append(candidate.id)
     }
 
-    private func syncSelectionOrder() {
-        let availableIDSet = Set(availableChoices.map(\.id))
-        selectedIDs = selectedIDs.intersection(availableIDSet)
-        selectedOrder = selectedOrder.filter { availableIDSet.contains($0) && selectedIDs.contains($0) }
+    private func removeSelection(for candidate: RestaurantCandidate) {
+        selectedIDs.remove(candidate.id)
+        selectedOrder.removeAll { $0 == candidate.id }
     }
 
-    @MainActor
-    private func isCandidateSavedLocally(_ candidate: RestaurantCandidate) -> Bool {
-        guard candidate.source == .nearby else { return false }
+    private func clearSelection() {
+        selectedIDs.removeAll()
+        selectedOrder.removeAll()
+    }
 
-        let normalizedName = candidate.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let normalizedAddress = candidate.address?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    private func pruneSelectionToAvailable() {
+        let validIDs = Set(availableChoices.map(\.id))
+        selectedIDs = selectedIDs.intersection(validIDs)
+        selectedOrder.removeAll { !validIDs.contains($0) }
+    }
+
+    private func startRoulette() {
+        pruneSelectionToAvailable()
+
+        let choices = selectedChoices
+
+        guard choices.count >= minSelections else {
+            return
+        }
+
+        rouletteChoices = choices
+        showRoulette = true
+    }
+
+    private func searchNearbyRestaurants(force: Bool) async {
+        if isSearchingNearby {
+            return
+        }
+
+        if !force && !rawNearbyChoices.isEmpty {
+            return
+        }
+
+        isSearchingNearby = true
+        nearbyError = nil
+
+        do {
+            let location = try await locationProvider.currentLocation()
+            let results = try await NearbyRestaurantService()
+                .searchNearbyRestaurants(from: location, limit: 50)
+
+            rawNearbyChoices = results
+            pruneSelectionToAvailable()
+        } catch {
+            nearbyError = error.localizedDescription
+        }
+
+        isSearchingNearby = false
+    }
+
+    private func saveCandidateToLocal(_ candidate: RestaurantCandidate) {
+        guard candidate.source == .nearby else {
+            return
+        }
+
+        if isCandidateSavedLocally(candidate) {
+            saveMessage = t("This restaurant is already in your local list.", "Este restaurante ya está en tu lista local.")
+            return
+        }
+
+        let restaurant = Restaurant(
+            name: candidate.name,
+            detailsText: candidate.detailsText,
+            foodType: FoodTypeFormatter.clean(candidate.foodType),
+            avgCost: candidate.avgCost,
+            address: candidate.address,
+            rating: candidate.rating,
+            frequency: candidate.frequency,
+            distanceMiles: candidate.distanceMiles,
+            latitude: candidate.latitude,
+            longitude: candidate.longitude,
+            photoData: candidate.photoData
+        )
+
+        modelContext.insert(restaurant)
+
+        saveMessage = t("Saved to your local list.", "Guardado en tu lista local.")
+    }
+
+    private func isCandidateSavedLocally(_ candidate: RestaurantCandidate) -> Bool {
+        if candidate.source == .local {
+            return true
+        }
+
+        let candidateName = normalized(candidate.name)
+        let candidateAddress = normalized(candidate.address)
 
         return allRestaurants.contains { restaurant in
-            let restaurantName = restaurant.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            let restaurantAddress = restaurant.address?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let localName = normalized(restaurant.name)
+            let localAddress = normalized(restaurant.address)
 
-            let sameName = restaurantName == normalizedName
-            let sameAddress = restaurantAddress == normalizedAddress
-
-            if let normalizedAddress {
-                return sameName && sameAddress
+            if !candidateAddress.isEmpty {
+                return localName == candidateName && localAddress == candidateAddress
             } else {
-                return sameName
+                return localName == candidateName
             }
+        }
+    }
+
+    // MARK: - Text Helpers
+
+    private var emptyStateTitle: String {
+        if selectedSource == .local {
+            return t("No local restaurants yet", "Todavía no tienes restaurantes locales")
+        } else if isSearchingNearby {
+            return t("Searching nearby...", "Buscando cercanos...")
+        } else {
+            return t("No nearby restaurants found", "No se encontraron restaurantes cercanos")
+        }
+    }
+
+    private var emptyStateSubtitle: String {
+        if selectedSource == .local {
+            return t(
+                "Add restaurants in the Restaurants tab first.",
+                "Primero añade restaurantes en la pestaña Restaurantes."
+            )
+        } else {
+            return t(
+                "Try searching again or increasing your distance filter.",
+                "Intenta buscar de nuevo o aumentar el filtro de distancia."
+            )
+        }
+    }
+
+    private func t(_ english: String, _ spanish: String) -> String {
+        if appLanguage == AppLanguageOption.spanish.rawValue {
+            return spanish
+        }
+
+        if appLanguage == AppLanguageOption.english.rawValue {
+            return english
+        }
+
+        let preferred = Locale.preferredLanguages.first?.lowercased() ?? ""
+        return preferred.hasPrefix("es") ? spanish : english
+    }
+
+    private func normalized(_ value: String?) -> String {
+        value?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current) ?? ""
+    }
+}
+
+// MARK: - Card Style
+
+private extension View {
+    func cardBackground() -> some View {
+        self
+            .background(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(.ultraThinMaterial)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(Color.white.opacity(0.22), lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(0.08), radius: 14, x: 0, y: 8)
+    }
+}
+
+// MARK: - Simple Flow Layout For Selected Chips
+
+private struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) -> CGSize {
+        let maxWidth = proposal.width ?? 0
+        var currentX: CGFloat = 0
+        var currentY: CGFloat = 0
+        var rowHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+
+            if currentX + size.width > maxWidth && currentX > 0 {
+                currentX = 0
+                currentY += rowHeight + spacing
+                rowHeight = 0
+            }
+
+            currentX += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+
+        return CGSize(width: maxWidth, height: currentY + rowHeight)
+    }
+
+    func placeSubviews(
+        in bounds: CGRect,
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) {
+        var currentX = bounds.minX
+        var currentY = bounds.minY
+        var rowHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+
+            if currentX + size.width > bounds.maxX && currentX > bounds.minX {
+                currentX = bounds.minX
+                currentY += rowHeight + spacing
+                rowHeight = 0
+            }
+
+            subview.place(
+                at: CGPoint(x: currentX, y: currentY),
+                proposal: ProposedViewSize(size)
+            )
+
+            currentX += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+    }
+}
+
+// MARK: - Location Provider
+
+private final class PickLocationProvider: NSObject,
+    CLLocationManagerDelegate {
+    private let manager = CLLocationManager()
+    private var continuation: CheckedContinuation<CLLocation, Error>?
+
+    override init() {
+        super.init()
+        manager.delegate = self
+        manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+    }
+
+    func currentLocation() async throws -> CLLocation {
+        try await withCheckedThrowingContinuation { continuation in
+            self.continuation = continuation
+
+            if !CLLocationManager.locationServicesEnabled() {
+                finish(with: .failure(PickLocationError.locationServicesDisabled))
+                return
+            }
+
+            switch manager.authorizationStatus {
+            case .notDetermined:
+                manager.requestWhenInUseAuthorization()
+
+            case .authorizedWhenInUse, .authorizedAlways:
+                manager.requestLocation()
+
+            case .denied, .restricted:
+                finish(with: .failure(PickLocationError.permissionDenied))
+
+            @unknown default:
+                finish(with: .failure(PickLocationError.unknown))
+            }
+        }
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        switch manager.authorizationStatus {
+        case .authorizedWhenInUse, .authorizedAlways:
+            manager.requestLocation()
+
+        case .denied, .restricted:
+            finish(with: .failure(PickLocationError.permissionDenied))
+
+        default:
+            break
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let location = locations.last else {
+            finish(with: .failure(PickLocationError.locationUnavailable))
+            return
+        }
+
+        finish(with: .success(location))
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        finish(with: .failure(error))
+    }
+
+    private func finish(with result: Result<CLLocation, Error>) {
+        guard let continuation else {
+            return
+        }
+
+        self.continuation = nil
+
+        switch result {
+        case .success(let location):
+            continuation.resume(returning: location)
+
+        case .failure(let error):
+            continuation.resume(throwing: error)
+        }
+    }
+}
+
+private enum PickLocationError: LocalizedError {
+    case locationServicesDisabled
+    case permissionDenied
+    case locationUnavailable
+    case unknown
+
+    var errorDescription: String? {
+        switch self {
+        case .locationServicesDisabled:
+            return "Location services are disabled."
+
+        case .permissionDenied:
+            return "Location permission is required to search nearby restaurants."
+
+        case .locationUnavailable:
+            return "Could not find your current location."
+
+        case .unknown:
+            return "Could not access your location."
         }
     }
 }

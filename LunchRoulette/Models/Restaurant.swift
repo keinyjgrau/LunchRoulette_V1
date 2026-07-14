@@ -10,6 +10,8 @@ import SwiftData
 
 @Model
 final class Restaurant {
+    @Attribute(.unique) var uuid: UUID = UUID()
+    
     var name: String
 
     var detailsText: String?

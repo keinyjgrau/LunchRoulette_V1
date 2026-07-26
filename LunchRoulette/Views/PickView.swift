@@ -479,22 +479,7 @@ struct PickView: View {
 
     private var rawLocalChoices: [RestaurantCandidate] {
         allRestaurants.map { restaurant in
-            RestaurantCandidate(
-                id: restaurant.uuid,
-                source: .local,
-                name: restaurant.name,
-                detailsText: restaurant.detailsText,
-                foodType: FoodTypeFormatter.clean(restaurant.foodType),
-                avgCost: restaurant.avgCost,
-                address: restaurant.address,
-                rating: restaurant.rating,
-                frequency: restaurant.frequency,
-                distanceMiles: restaurant.distanceMiles,
-                latitude: restaurant.latitude,
-                longitude: restaurant.longitude,
-                photoData: restaurant.photoData,
-                winningNumber: nil
-            )
+            RestaurantCandidate(from: restaurant)
         }
     }
 

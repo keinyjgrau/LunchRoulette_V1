@@ -16,9 +16,10 @@ struct LunchRouletteApp: App {
     init() {
         do {
             container = try ModelContainer(for: Restaurant.self)
-            let context = ModelContext(container)
+
 
             #if DEBUG
+            let context = ModelContext(container)
             SeedData.insertIfNeeded(in: context)
             #endif
 

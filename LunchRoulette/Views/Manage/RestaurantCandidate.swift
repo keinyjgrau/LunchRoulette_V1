@@ -70,7 +70,7 @@ extension RestaurantCandidate {
             source: .local,
             name: restaurant.name,
             detailsText: restaurant.detailsText,
-            foodType: restaurant.foodType,
+            foodType: FoodTypeFormatter.clean(restaurant.foodType),
             avgCost: restaurant.avgCost,
             address: restaurant.address,
             rating: restaurant.rating,

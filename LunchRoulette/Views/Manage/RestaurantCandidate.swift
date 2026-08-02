@@ -6,14 +6,23 @@
 //
 
 import Foundation
+import SwiftData
 
 enum RestaurantCandidateSource: Hashable {
     case local
     case nearby
 }
 
+// Supports both:
+// - SwiftData IDs for saved local restaurants
+// - UUIDs for temporary nearby search results
+enum RestaurantCandidateID: Hashable {
+    case local(PersistentIdentifier)
+    case nearby(UUID)
+}
+
 struct RestaurantCandidate: Identifiable, Hashable {
-    let id: UUID
+    let id: RestaurantCandidateID
     let source: RestaurantCandidateSource
 
     let name: String
@@ -30,7 +39,7 @@ struct RestaurantCandidate: Identifiable, Hashable {
     let winningNumber: Int?
 
     init(
-        id: UUID = UUID(),
+        id: RestaurantCandidateID = .nearby(UUID()),
         source: RestaurantCandidateSource,
         name: String,
         detailsText: String? = nil,
@@ -66,7 +75,7 @@ extension RestaurantCandidate {
     @MainActor
     init(from restaurant: Restaurant) {
         self.init(
-            id: UUID(),
+            id: .local(restaurant.persistentModelID),
             source: .local,
             name: restaurant.name,
             detailsText: restaurant.detailsText,
@@ -103,8 +112,14 @@ extension RestaurantCandidate {
     }
 
     var repeatKey: String {
-        let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let normalizedAddress = address?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        let normalizedName = name
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+
+        let normalizedAddress = address?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ?? ""
+
         return "\(normalizedName)|\(normalizedAddress)"
     }
 }

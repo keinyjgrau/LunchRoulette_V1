@@ -27,8 +27,8 @@ struct PickView: View {
     @State private var isSearchingNearby = false
     @State private var nearbyError: String?
 
-    @State private var selectedIDs: Set<UUID> = []
-    @State private var selectedOrder: [UUID] = []
+    @State private var selectedIDs: Set<RestaurantCandidateID> = []
+    @State private var selectedOrder: [RestaurantCandidateID] = []
 
     @State private var useDistanceFilter = false
     @State private var nearbyDistanceLimit = 10.0
@@ -638,7 +638,21 @@ struct PickView: View {
 
         modelContext.insert(restaurant)
 
-        saveMessage = t("Saved to your local list.", "Guardado en tu lista local.")
+        do {
+            try modelContext.save()
+
+            saveMessage = t(
+                "Saved to your local list.",
+                "Guardado en tu lista local."
+            )
+        } catch {
+            modelContext.delete(restaurant)
+
+            saveMessage = t(
+                "The restaurant could not be saved.",
+                "No se pudo guardar el restaurante."
+            )
+        }
     }
 
     private func isCandidateSavedLocally(_ candidate: RestaurantCandidate) -> Bool {

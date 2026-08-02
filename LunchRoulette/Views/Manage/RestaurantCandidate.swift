@@ -13,9 +13,8 @@ enum RestaurantCandidateSource: Hashable {
     case nearby
 }
 
-// Supports both:
-// - SwiftData IDs for saved local restaurants
-// - UUIDs for temporary nearby search results
+/// A stable identifier for both persisted local restaurants and temporary
+/// nearby search results.
 enum RestaurantCandidateID: Hashable {
     case local(PersistentIdentifier)
     case nearby(UUID)
@@ -91,7 +90,7 @@ extension RestaurantCandidate {
             winningNumber: nil
         )
     }
-
+    
     func withWinningNumber(_ number: Int?) -> RestaurantCandidate {
         RestaurantCandidate(
             id: id,
@@ -110,16 +109,16 @@ extension RestaurantCandidate {
             winningNumber: number
         )
     }
-
+    
     var repeatKey: String {
         let normalizedName = name
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
-
+        
         let normalizedAddress = address?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased() ?? ""
-
+        
         return "\(normalizedName)|\(normalizedAddress)"
     }
 }

@@ -324,11 +324,44 @@ struct PickView: View {
 
     private var selectedRestaurantsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
+            HStack(spacing: 10) {
                 Text(t("Selected", "Seleccionados"))
                     .font(.headline)
 
                 Spacer()
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        clearSelection()
+                    }
+                } label: {
+                    Label(
+                        t("Clear", "Limpiar"),
+                        systemImage: "arrow.counterclockwise"
+                    )
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .foregroundStyle(
+                        selectedChoices.isEmpty
+                        ? Color.secondary
+                        : Color.orange
+                    )
+                    .background(
+                        Capsule()
+                            .fill(
+                                Color.orange.opacity(
+                                    selectedChoices.isEmpty ? 0.06 : 0.14
+                                )
+                            )
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(selectedChoices.isEmpty)
+                .accessibilityLabel(
+                    t("Clear all selections", "Borrar todas las selecciones")
+                )
 
                 Text("\(selectedChoices.count)/\(maxSelections)")
                     .font(.caption)
